@@ -5,6 +5,7 @@ Analiza cabeceras HTTP de seguridad, robots.txt y rutas sensibles expuestas.
 
 import requests
 import urllib3
+import time
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -88,9 +89,10 @@ SENSITIVE_PATHS = [
 
 
 class WebAnalyzer:
-    def __init__(self, target: str, recon_data: dict):
+    def __init__(self, target: str, recon_data: dict, stealth: bool = False):
         self.target = target
         self.recon_data = recon_data
+        self.delay = 1.0 if stealth else 0
         self.findings = []
 
     def analyze(self) -> list:
@@ -175,6 +177,7 @@ class WebAnalyzer:
         for path, severidad, descripcion in SENSITIVE_PATHS:
             full_url = base + path
             try:
+                time.sleep(self.delay)
                 resp = requests.get(full_url, timeout=TIMEOUT, verify=False,
                                     allow_redirects=False,
                                     headers={"User-Agent": "Mozilla/5.0 (compatible; SecurityAudit/1.0)"})

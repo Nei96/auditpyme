@@ -86,6 +86,8 @@ def parse_args():
                              "Disponibles: sqli, xss, lfi, redirect, cmdi, csrf, idor")
     parser.add_argument("--no-pdf",      action="store_true",
                         help="No generar PDF, solo HTML")
+    parser.add_argument("--stealth", action="store_true",
+                        help="Modo sigiloso: nmap T2 + scan-delay 1s, pausas entre peticiones web")
     return parser.parse_args()
 
 
@@ -164,7 +166,7 @@ def main():
     if args.perfil != "externo":
 
         print_phase(1, "Reconocimiento — nmap")
-        recon = Recon(args.target, ports=args.ports)
+        recon = Recon(args.target, ports=args.ports, stealth=args.stealth)
         results["recon"] = recon.scan()
 
         if not results["recon"]["hosts"] and args.perfil == "completo":
@@ -183,7 +185,7 @@ def main():
 
         if not args.skip_web:
             print_phase("2b", "Análisis web")
-            results["web"] = WebAnalyzer(args.target, results["recon"]).analyze()
+            results["web"] = WebAnalyzer(args.target, results["recon"], stealth=args.stealth).analyze()
             print(f"\n[+] Hallazgos web: {len(results['web'])}")
 
         if not args.skip_ssl:
@@ -216,7 +218,6 @@ def main():
             # Fusionar hosts descubiertos con creds para que CredChecker los analice
             if not args.skip_creds and rl_result["recon"]["hosts"]:
                 print_phase("3e", "Credenciales en red local WiFi")
-                from modules.credentials import CredChecker
                 creds_local = CredChecker("red-local", rl_result["recon"]).check()
                 results["creds"] += creds_local
                 accesos = len([c for c in creds_local if c["acceso"]])
@@ -225,7 +226,7 @@ def main():
         if not args.skip_webapp:
             print_phase("3b", "Análisis OWASP — inyecciones y vulnerabilidades web")
             checks = [c.strip() for c in args.webapp_checks.split(",")]
-            webapp = WebAppScanner(args.target, checks=checks)
+            webapp = WebAppScanner(args.target, checks=checks, stealth=args.stealth)
             results["webapp"] = webapp.scan()
             print(f"\n[+] Hallazgos OWASP: {len([f for f in results['webapp'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
 

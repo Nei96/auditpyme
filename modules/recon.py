@@ -9,20 +9,26 @@ import socket
 
 
 class Recon:
-    def __init__(self, target: str, ports: str = "1-1024,3306,3389,5432,5900,6379,8080,8443,8888,27017"):
+    def __init__(self, target: str, ports: str = "1-1024,3306,3389,5432,5900,6379,8080,8443,8888,27017",
+                 stealth: bool = False):
         self.target = target
         self.ports = ports
+        self.stealth = stealth
         self.nm = nmap.PortScanner()
 
     def scan(self) -> dict:
         print(f"[*] Escaneando: {self.target}")
         print(f"[*] Puertos: {self.ports}")
+        if self.stealth:
+            print("[*] Modo sigiloso: timing T2, scan-delay 1s, paralelismo reducido")
         print("[*] Esto puede tardar varios minutos...\n")
 
-        # -O requiere root — lo intentamos con y sin detección de OS
         import os
         is_root = os.geteuid() == 0
-        args = "-sV -sC -T3 --open" + (" -O" if is_root else "")
+        if self.stealth:
+            args = "-sV -sC -T2 --scan-delay 1s --max-parallelism 10 --open" + (" -O" if is_root else "")
+        else:
+            args = "-sV -sC -T3 --open" + (" -O" if is_root else "")
 
         try:
             self.nm.scan(hosts=self.target, ports=self.ports, arguments=args)

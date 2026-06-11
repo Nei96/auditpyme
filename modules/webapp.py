@@ -91,9 +91,10 @@ IDOR_PATTERNS = [
 
 
 class WebAppScanner:
-    def __init__(self, target: str, checks: list = None):
+    def __init__(self, target: str, checks: list = None, stealth: bool = False):
         self.target = self._normalize_url(target)
         self.checks = checks or ["sqli", "xss", "lfi", "redirect", "cmdi", "csrf", "idor"]
+        self.delay = 1.5 if stealth else 0
         self.findings = []
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": UA})
@@ -202,6 +203,7 @@ class WebAppScanner:
                 for payload in SQLI_ERROR_PAYLOADS[:4]:
                     data = {**form["fields"], field: payload}
                     try:
+                        time.sleep(self.delay)
                         if form["method"] == "post":
                             resp = self.session.post(form["url"], data=data, timeout=TIMEOUT)
                         else:
@@ -229,6 +231,7 @@ class WebAppScanner:
                     new_params = {**{k: v[0] for k, v in p["params"].items()}, param: SQLI_TIME_PAYLOAD}
                     url_parts[4] = urlencode(new_params)
                     test_url = urlunparse(url_parts)
+                    time.sleep(self.delay)
                     t0 = time.time()
                     self.session.get(test_url, timeout=8)
                     elapsed = time.time() - t0
@@ -258,6 +261,7 @@ class WebAppScanner:
                 for payload in XSS_PAYLOADS[:3]:
                     data = {**form["fields"], field: payload}
                     try:
+                        time.sleep(self.delay)
                         if form["method"] == "post":
                             resp = self.session.post(form["url"], data=data, timeout=TIMEOUT)
                         else:
@@ -286,6 +290,7 @@ class WebAppScanner:
                         new_params = {**{k: v[0] for k, v in p["params"].items()}, param: payload}
                         url_parts[4] = urlencode(new_params)
                         test_url = urlunparse(url_parts)
+                        time.sleep(self.delay)
                         resp = self.session.get(test_url, timeout=TIMEOUT)
                         if any(s in resp.text.lower() for s in XSS_SIGNS):
                             self._add("HIGH", "XSS REFLEJADO",
