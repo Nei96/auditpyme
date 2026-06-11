@@ -24,6 +24,7 @@ from modules.auth import AuthAuditor
 from modules.jsanalysis import JSAnalyzer
 from modules.graphql import GraphQLAuditor
 from modules.fileupload import FileUploadAuditor
+from modules.business_logic import BusinessLogicAuditor
 from modules.report import ReportGenerator
 
 BANNER = """
@@ -176,6 +177,7 @@ def main():
         "js":           [],
         "graphql":      [],
         "fileupload":   [],
+        "bizlogic":     [],
     }
 
     # ── FASE 0: OSINT externo ─────────────────────────────────────────────────
@@ -277,6 +279,11 @@ def main():
         results["fileupload"] = fu.scan()
         print(f"\n[+] Hallazgos subida de archivos: {len([f for f in results['fileupload'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
 
+        print_phase("2b6", "Lógica de negocio — precios, cupones, CORS, mass assignment")
+        biz = BusinessLogicAuditor(args.target, results["recon"], stealth=args.stealth)
+        results["bizlogic"] = biz.scan()
+        print(f"\n[+] Hallazgos lógica de negocio: {len([f for f in results['bizlogic'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
+
         print_phase("3a", "Auditoría de autenticación — bypass, fuerza bruta, sesión")
         auth = AuthAuditor(args.target, results["recon"], stealth=args.stealth)
         results["auth"] = auth.scan()
@@ -320,7 +327,7 @@ def main():
                     results["ssl"] + results["dns"] + results["email"] +
                     results["osint"] + results["webapp"] + results["wifi"] +
                     results["cms"] + results["auth"] + results["js"] +
-                    results["graphql"] + results["fileupload"])
+                    results["graphql"] + results["fileupload"] + results["bizlogic"])
     criticos = sum(1 for f in all_findings if f.get("severidad") == "CRITICAL")
     altos    = sum(1 for f in all_findings if f.get("severidad") == "HIGH")
     medios   = sum(1 for f in all_findings if f.get("severidad") == "MEDIUM")
