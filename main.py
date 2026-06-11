@@ -19,6 +19,7 @@ from modules.email_sec import EmailSecChecker
 from modules.osint import OSINTScanner
 from modules.webapp import WebAppScanner
 from modules.wifi import WiFiAuditor, RedLocalAuditor
+from modules.cms import CMSDetector
 from modules.report import ReportGenerator
 
 BANNER = """
@@ -166,6 +167,7 @@ def main():
         "osint":        [],
         "webapp":       [],
         "wifi":         [],
+        "cms":          [],
     }
 
     # ── FASE 0: OSINT externo ─────────────────────────────────────────────────
@@ -211,6 +213,11 @@ def main():
             print_phase("2b", "Análisis web")
             results["web"] = WebAnalyzer(args.target, results["recon"], stealth=args.stealth).analyze()
             print(f"\n[+] Hallazgos web: {len(results['web'])}")
+
+        print_phase("2b2", "Fingerprinting CMS — WordPress · Joomla · PrestaShop · Laravel")
+        cms_detector = CMSDetector(args.target, results["recon"])
+        results["cms"] = cms_detector.scan()
+        print(f"\n[+] Hallazgos CMS: {len([f for f in results['cms'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
 
         if not args.skip_ssl:
             print_phase("2c", "Análisis SSL/TLS")
@@ -282,7 +289,7 @@ def main():
     # ── Resumen ───────────────────────────────────────────────────────────────
     all_findings = (results["vulns"] + results["misconfigs"] + results["web"] +
                     results["ssl"] + results["dns"] + results["email"] +
-                    results["osint"] + results["webapp"] + results["wifi"])
+                    results["osint"] + results["webapp"] + results["wifi"] + results["cms"])
     criticos = sum(1 for f in all_findings if f.get("severidad") == "CRITICAL")
     altos    = sum(1 for f in all_findings if f.get("severidad") == "HIGH")
     medios   = sum(1 for f in all_findings if f.get("severidad") == "MEDIUM")

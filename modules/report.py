@@ -87,7 +87,8 @@ class ReportGenerator:
             self.r.get("email", []) +
             self.r.get("osint", []) +
             self.r.get("webapp", []) +
-            self.r.get("wifi", [])
+            self.r.get("wifi", []) +
+            self.r.get("cms", [])
         )
 
     def generate(self, output_path: str):
@@ -124,6 +125,7 @@ class ReportGenerator:
   {self._chart_svg(counts)}
   {self._section_osint()}
   {self._section_email()}
+  {self._section_cms()}
   {self._section_webapp()}
   {self._section_recon()}
   {self._section_wifi()}
@@ -634,7 +636,8 @@ a.cve:hover { text-decoration: underline; }
             self.r.get("ssl", []) +
             self.r.get("dns", []) +
             self.r.get("wifi", []) +
-            self.r.get("webapp", [])
+            self.r.get("webapp", []) +
+            self.r.get("cms", [])
         )
         # Solo CRITICAL y HIGH — nada de ruido
         all_sources = [f for f in all_sources
@@ -810,6 +813,39 @@ a.cve:hover { text-decoration: underline; }
             "Análisis OWASP — Inyecciones y Vulnerabilidades Web",
             f"""<table><thead><tr>
               <th>Severidad</th><th>Tipo</th><th>Hallazgo</th>
+              <th>Descripción</th><th>Solución</th>
+            </tr></thead><tbody>{rows}</tbody></table>"""
+        )
+
+    # ── CMS ────────────────────────────────────────────────────────────────────
+
+    def _section_cms(self) -> str:
+        items = sorted(self.r.get("cms", []),
+                       key=lambda x: SEVERITY_ORDER.get(x.get("severidad", "UNKNOWN"), 99))
+        if not items:
+            return ""
+
+        rows = ""
+        for f in items:
+            sev = f.get("severidad", "INFO")
+            color = SEVERITY_COLOR.get(sev, "#999")
+            icon, impact = self._get_business_impact(f)
+            impact_html = (
+                f'<div style="margin-top:5px;font-size:0.78rem;color:#c0392b;">'
+                f'<strong>{icon} Impacto:</strong> {impact}</div>'
+            ) if impact else ""
+            rows += f"""
+      <tr>
+        <td><span class="badge" style="background:{color};">{SEVERITY_ES.get(sev, sev)}</span></td>
+        <td><strong>{f.get('nombre','')}</strong>{impact_html}</td>
+        <td style="font-size:0.82rem;">{f.get('descripcion','')}</td>
+        <td style="font-size:0.82rem;color:#555;">{f.get('recomendacion','')}</td>
+      </tr>"""
+
+        return self._wrap_section(
+            "Fingerprinting CMS — WordPress · Joomla · PrestaShop · Laravel",
+            f"""<table><thead><tr>
+              <th>Severidad</th><th>Hallazgo</th>
               <th>Descripción</th><th>Solución</th>
             </tr></thead><tbody>{rows}</tbody></table>"""
         )
