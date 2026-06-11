@@ -6,6 +6,8 @@ Analiza cabeceras HTTP de seguridad, robots.txt y rutas sensibles expuestas.
 import requests
 import urllib3
 import time
+import hashlib
+import os
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -169,9 +171,47 @@ class WebAnalyzer:
                           "MEDIUM",
                           "Configurar redirección 301 de HTTP a HTTPS en el servidor web.")
 
+    def _get_wildcard_baseline(self, base: str) -> dict | None:
+        """Petición a ruta inventada para detectar servidores que devuelven 200 a todo."""
+        canary = f"/canary-{os.urandom(8).hex()}-test"
+        try:
+            resp = requests.get(base + canary, timeout=TIMEOUT, verify=False,
+                                allow_redirects=True,
+                                headers={"User-Agent": "Mozilla/5.0 (compatible; SecurityAudit/1.0)"})
+            if resp.status_code == 200:
+                body = resp.text
+                return {
+                    "size": len(body),
+                    "hash": hashlib.md5(body.encode()).hexdigest(),
+                    "snippet": body[:300],
+                }
+        except Exception:
+            pass
+        return None
+
+    def _is_wildcard_hit(self, resp, baseline: dict) -> bool:
+        """Devuelve True si la respuesta es igual o casi igual al baseline wildcard."""
+        body = resp.text
+        size = len(body)
+        # Mismo hash = contenido idéntico
+        if hashlib.md5(body.encode()).hexdigest() == baseline["hash"]:
+            return True
+        # Tamaño muy similar (±5%) = probablemente la misma página
+        if baseline["size"] > 0 and abs(size - baseline["size"]) / baseline["size"] < 0.05:
+            return True
+        # Mismo inicio de contenido
+        if body[:200] == baseline["snippet"][:200]:
+            return True
+        return False
+
     def _check_paths(self, url: str):
         base = url.rstrip("/")
         print(f"  [*] Comprobando {len(SENSITIVE_PATHS)} rutas sensibles...")
+
+        baseline = self._get_wildcard_baseline(base)
+        if baseline:
+            print(f"  [!] Wildcard 200 detectado (tamaño: {baseline['size']}B) — se filtrarán falsos positivos")
+
         encontradas = 0
 
         for path, severidad, descripcion in SENSITIVE_PATHS:
@@ -183,10 +223,11 @@ class WebAnalyzer:
                                     headers={"User-Agent": "Mozilla/5.0 (compatible; SecurityAudit/1.0)"})
 
                 if resp.status_code in (200, 401, 403):
-                    # Filtrar falsos positivos de CDN/WAF (Cloudflare, etc.)
-                    # que devuelven 200 con páginas de error genéricas
-                    if resp.status_code == 200 and self._is_cdn_error(resp):
-                        continue
+                    if resp.status_code == 200:
+                        if baseline and self._is_wildcard_hit(resp, baseline):
+                            continue
+                        if self._is_cdn_error(resp):
+                            continue
 
                     estado = "ACCESIBLE" if resp.status_code == 200 else f"PROTEGIDO ({resp.status_code})"
                     sev_real = severidad if resp.status_code == 200 else "LOW"
