@@ -615,19 +615,32 @@ class WebAppScanner:
         self._params = []
 
     def _login(self):
-        """Intenta autenticarse antes de rastrear."""
+        """Intenta autenticarse. Usa la misma sesión para GET (token CSRF) y POST."""
         login_url = self.auth_url or (self.target + "/login")
         try:
+            # GET con la misma sesión para capturar cookies y token CSRF
             resp = self.session.get(login_url, timeout=TIMEOUT)
-            # Buscar campos del formulario de login
-            inputs = re.findall(r'<input[^>]*name=["\']([^"\']+)["\']', resp.text, re.IGNORECASE)
-            user_field = next((f for f in inputs if any(k in f.lower() for k in ("user", "email", "login", "name"))), "username")
-            pass_field = next((f for f in inputs if any(k in f.lower() for k in ("pass", "pwd", "secret"))), "password")
-            data = {user_field: self.auth_user, pass_field: self.auth_pass}
+            # Extraer tags <input> completos y luego name/value por separado
+            input_tags = re.findall(r'<input[^>]+>', resp.text, re.IGNORECASE)
+            all_inputs = []
+            for tag in input_tags:
+                name_m  = re.search(r'name=["\']([^"\']+)["\']', tag, re.IGNORECASE)
+                value_m = re.search(r'value=["\']([^"\']*)["\']', tag, re.IGNORECASE)
+                if name_m:
+                    all_inputs.append((name_m.group(1), value_m.group(1) if value_m else ''))
+            data = {name: value for name, value in all_inputs if name.lower() not in ("submit",)}
+            # Identificar campos de usuario y contraseña
+            user_field = next((n for n, _ in all_inputs if any(k in n.lower() for k in ("user", "email", "login"))), "username")
+            pass_field = next((n for n, _ in all_inputs if any(k in n.lower() for k in ("pass", "pwd", "secret"))), "password")
+            data[user_field] = self.auth_user
+            data[pass_field] = self.auth_pass
+            # POST con la MISMA sesión (mismas cookies) para que el token CSRF sea válido
             r = self.session.post(login_url, data=data, timeout=TIMEOUT, allow_redirects=True)
-            if r.status_code in (200, 302):
-                print(f"  [*] Login como '{self.auth_user}' — HTTP {r.status_code}")
+            if "login" not in r.url.lower():
+                print(f"  [*] Login como '{self.auth_user}' — OK")
                 return True
+            else:
+                print(f"  [!] Login fallido para '{self.auth_user}'")
         except Exception as e:
             print(f"  [!] Error en login: {e}")
         return False
