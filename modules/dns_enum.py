@@ -1,11 +1,77 @@
 """
 Módulo de enumeración DNS
-Comprueba: registros A/MX/NS/TXT, transferencia de zona, SPF, DMARC
-y subdominios comunes. Requiere dnspython.
+Comprueba: registros A/MX/NS/TXT, transferencia de zona, SPF, DMARC,
+subdominios comunes y subdomain takeover via CNAME dangling + HTTP fingerprints.
 """
 
 import socket
+import requests
+import urllib3
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+TIMEOUT = 8
+UA = "Mozilla/5.0 (compatible; AuditPyme/1.0)"
+
+
+# Fingerprints de servicios cloud que indican subdominio sin reclamar
+# Formato: (cadena_en_body, nombre_servicio)
+TAKEOVER_FINGERPRINTS = [
+    ("There isn't a GitHub Pages site here",    "GitHub Pages"),
+    ("For root URLs (like http://www.example.com/) you can only use",  "GitHub Pages"),
+    ("No such app",                              "Heroku"),
+    ("herokucdn.com/error-pages/no-such-app",   "Heroku"),
+    ("NoSuchBucket",                             "Amazon S3"),
+    ("The specified bucket does not exist",      "Amazon S3"),
+    ("NoSuchKey",                                "Amazon S3"),
+    ("404 Web Site not found",                   "Azure Web App"),
+    ("ErrorCode: DomainNotFound",               "Azure"),
+    ("Fastly error: unknown domain",             "Fastly CDN"),
+    ("Sorry, this shop is currently unavailable","Shopify"),
+    ("project not found",                        "Surge.sh"),
+    ("The gods are wise, but do not know",       "Pantheon"),
+    ("You are being redirected",                 "StatusPage.io"),
+    ("Help Center Closed",                       "Zendesk"),
+    ("This UserVoice subdomain is currently available", "UserVoice"),
+    ("This page is reserved for future",         "Tave"),
+    ("Double check the URL",                     "Campaign Monitor"),
+    ("Uh oh. The page you requested could not be found", "Mailchimp"),
+    ("There's nothing here",                     "Tumblr"),
+    ("Domain not configured",                    "Ghost"),
+    ("does not exist",                           "HubSpot"),
+    ("Uh oh. That page doesn't exist",           "Intercom"),
+    ("We could not find what you're looking for","Helpjuice"),
+    ("Sorry, We Couldn't Find That Page",        "Desk.com"),
+    ("It looks like you may have taken a wrong turn", "LaunchRock"),
+]
+
+# CNAMEs de servicios cloud (si el destino no resuelve → takeover posible)
+CLOUD_CNAME_PATTERNS = [
+    "github.io", "githubapp.com",
+    "herokussl.com", "herokuapp.com",
+    "s3.amazonaws.com", "s3-website",
+    "azurewebsites.net", "cloudapp.net", "azure.com",
+    "fastly.net",
+    "shopify.com",
+    "surge.sh",
+    "pantheonsite.io",
+    "statuspage.io", "stspg-customer.com",
+    "zendesk.com",
+    "uservoice.com",
+    "mailchimp.com",
+    "tumblr.com",
+    "ghost.io",
+    "hubspot.com", "hs-sites.com",
+    "intercom.io",
+    "helpjuice.com",
+    "netlify.app", "netlify.com",
+    "pages.dev",           # Cloudflare Pages
+    "vercel.app",
+    "render.com",
+    "fly.dev",
+    "readthedocs.io",
+    "launchrock.com",
+    "cargo.site",
+]
 
 # Subdominios comunes a probar
 COMMON_SUBDOMAINS = [
@@ -49,7 +115,8 @@ class DNSEnumerator:
         self._get_records(dns)
         self._check_zone_transfer(dns)
         self._check_spf_dmarc(dns)
-        self._brute_subdomains()
+        subdomains = self._brute_subdomains()
+        self._check_takeover(dns, subdomains)
 
         return self.findings
 
@@ -183,7 +250,8 @@ class DNSEnumerator:
 
     # ── Fuerza bruta de subdominios ───────────────────────────────────────────
 
-    def _brute_subdomains(self):
+    def _brute_subdomains(self) -> list:
+        """Resuelve subdominios comunes. Devuelve lista de FQDNs encontrados."""
         print(f"  [*] Buscando subdominios ({len(COMMON_SUBDOMAINS)} candidatos)...")
         encontrados = []
 
@@ -191,22 +259,129 @@ class DNSEnumerator:
             fqdn = f"{sub}.{self.domain}"
             try:
                 ip = socket.gethostbyname(fqdn)
-                encontrados.append((fqdn, ip))
+                encontrados.append(fqdn)
                 print(f"  [SUB] {fqdn} → {ip}")
             except socket.gaierror:
                 pass
 
         if encontrados:
-            lista = ", ".join(f"{fqdn} ({ip})" for fqdn, ip in encontrados[:20])
+            lista = ", ".join(encontrados[:20])
             self.findings.append({
                 "tipo": "SUBDOMINIOS",
                 "nombre": f"{len(encontrados)} subdominios encontrados",
                 "descripcion": lista,
                 "severidad": "INFO",
-                "recomendacion": "Revisar cada subdominio — los no usados deben ser eliminados (subdomain takeover).",
+                "recomendacion": "Revisar cada subdominio — los no usados deben ser eliminados.",
             })
         else:
             print("  [+] No se encontraron subdominios comunes.")
+        return encontrados
+
+    # ── Subdomain Takeover ────────────────────────────────────────────────────
+
+    def _check_takeover(self, dns, subdomains: list):
+        """
+        Detecta subdomain takeover por dos vías:
+        1. CNAME dangling: subdominio apunta vía CNAME a servicio cloud que no resuelve.
+        2. HTTP fingerprint: subdominio resuelve pero el servicio cloud no está reclamado.
+        También evalúa subdominios que NO resolvieron (NXDOMAIN con CNAME activo).
+        """
+        import dns.resolver
+        import dns.exception
+
+        print(f"  [*] Comprobando subdomain takeover ({len(COMMON_SUBDOMAINS)} candidatos)...")
+        vulnerables = 0
+
+        all_candidates = list(COMMON_SUBDOMAINS)  # probar todos, resuelvan o no
+        for sub in all_candidates:
+            fqdn = f"{sub}.{self.domain}"
+            cname_target = self._get_cname(dns, fqdn)
+            if not cname_target:
+                continue  # Sin CNAME → no aplica
+
+            # ¿El CNAME apunta a un servicio cloud conocido?
+            cloud_service = next(
+                (svc for pat, svc in [
+                    (p, p.split(".")[0].capitalize()) for p in CLOUD_CNAME_PATTERNS
+                ] if pat in cname_target),
+                None
+            )
+            if not cloud_service:
+                # Buscar con nombre más descriptivo
+                for pat in CLOUD_CNAME_PATTERNS:
+                    if pat in cname_target:
+                        cloud_service = pat
+                        break
+            if not cloud_service:
+                continue
+
+            # Vector 1: ¿El destino del CNAME resuelve?
+            try:
+                socket.gethostbyname(cname_target.rstrip("."))
+                cname_resuelve = True
+            except socket.gaierror:
+                cname_resuelve = False
+
+            if not cname_resuelve:
+                self._add_takeover(fqdn, cname_target, cloud_service,
+                                   "CNAME dangling — el servicio cloud fue eliminado")
+                vulnerables += 1
+                continue
+
+            # Vector 2: HTTP fingerprint — servicio activo pero no reclamado
+            for proto in ("https", "http"):
+                try:
+                    r = requests.get(
+                        f"{proto}://{fqdn}",
+                        timeout=TIMEOUT,
+                        verify=False,
+                        allow_redirects=True,
+                        headers={"User-Agent": UA},
+                    )
+                    body = r.text
+                    for fingerprint, servicio in TAKEOVER_FINGERPRINTS:
+                        if fingerprint.lower() in body.lower():
+                            self._add_takeover(fqdn, cname_target, servicio,
+                                               f"Página de '{servicio}' sin reclamar detectada")
+                            vulnerables += 1
+                            break
+                    break  # Si https funcionó no probar http
+                except Exception:
+                    continue
+
+        if vulnerables == 0:
+            print("  [OK] No se detectaron subdominios con riesgo de takeover")
+
+    def _get_cname(self, dns, fqdn: str) -> str | None:
+        """Devuelve el destino del registro CNAME si existe, o None."""
+        try:
+            answers = dns.resolver.resolve(fqdn, "CNAME", lifetime=4)
+            return str(answers[0].target)
+        except Exception:
+            return None
+
+    def _add_takeover(self, fqdn: str, cname: str, servicio: str, motivo: str):
+        nombre = f"Subdomain Takeover posible: {fqdn}"
+        for f in self.findings:
+            if f.get("nombre") == nombre:
+                return
+        print(f"  [CRITICAL] Takeover en {fqdn} → {cname} ({servicio})")
+        self.findings.append({
+            "tipo": "SUBDOMAIN TAKEOVER",
+            "nombre": nombre,
+            "descripcion": (
+                f"{motivo}. El subdominio '{fqdn}' apunta mediante CNAME a '{cname}' "
+                f"({servicio}), pero ese recurso ya no está activo o no está reclamado. "
+                f"Cualquier atacante puede registrar ese recurso en {servicio} y "
+                f"servir contenido malicioso desde un subdominio oficial de la empresa."
+            ),
+            "severidad": "CRITICAL",
+            "recomendacion": (
+                f"Eliminar el registro CNAME '{fqdn}' del DNS de forma urgente, o "
+                f"registrar el recurso en {servicio} para reclamarlo. "
+                f"El subdominio no debe existir en DNS si el servicio ya no se usa."
+            ),
+        })
 
     # ── Utilidades ─────────────────────────────────────────────────────────────
 
