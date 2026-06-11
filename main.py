@@ -22,6 +22,7 @@ from modules.wifi import WiFiAuditor, RedLocalAuditor
 from modules.cms import CMSDetector
 from modules.auth import AuthAuditor
 from modules.jsanalysis import JSAnalyzer
+from modules.graphql import GraphQLAuditor
 from modules.report import ReportGenerator
 
 BANNER = """
@@ -172,6 +173,7 @@ def main():
         "cms":          [],
         "auth":         [],
         "js":           [],
+        "graphql":      [],
     }
 
     # ── FASE 0: OSINT externo ─────────────────────────────────────────────────
@@ -263,6 +265,11 @@ def main():
         results["js"] = js_analyzer.scan()
         print(f"\n[+] Hallazgos JS críticos/altos: {len([f for f in results['js'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
 
+        print_phase("2b4", "Auditoría GraphQL — introspección, auth, profundidad")
+        gql = GraphQLAuditor(args.target, results["recon"])
+        results["graphql"] = gql.scan()
+        print(f"\n[+] Hallazgos GraphQL: {len([f for f in results['graphql'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
+
         print_phase("3a", "Auditoría de autenticación — bypass, fuerza bruta, sesión")
         auth = AuthAuditor(args.target, results["recon"], stealth=args.stealth)
         results["auth"] = auth.scan()
@@ -305,7 +312,7 @@ def main():
     all_findings = (results["vulns"] + results["misconfigs"] + results["web"] +
                     results["ssl"] + results["dns"] + results["email"] +
                     results["osint"] + results["webapp"] + results["wifi"] +
-                    results["cms"] + results["auth"] + results["js"])
+                    results["cms"] + results["auth"] + results["js"] + results["graphql"])
     criticos = sum(1 for f in all_findings if f.get("severidad") == "CRITICAL")
     altos    = sum(1 for f in all_findings if f.get("severidad") == "HIGH")
     medios   = sum(1 for f in all_findings if f.get("severidad") == "MEDIUM")

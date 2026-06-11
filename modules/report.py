@@ -90,7 +90,8 @@ class ReportGenerator:
             self.r.get("wifi", []) +
             self.r.get("cms", []) +
             self.r.get("auth", []) +
-            self.r.get("js", [])
+            self.r.get("js", []) +
+            self.r.get("graphql", [])
         )
 
     def generate(self, output_path: str):
@@ -129,6 +130,7 @@ class ReportGenerator:
   {self._section_email()}
   {self._section_cms()}
   {self._section_js()}
+  {self._section_graphql()}
   {self._section_auth()}
   {self._section_webapp()}
   {self._section_recon()}
@@ -643,7 +645,8 @@ a.cve:hover { text-decoration: underline; }
             self.r.get("webapp", []) +
             self.r.get("cms", []) +
             self.r.get("auth", []) +
-            self.r.get("js", [])
+            self.r.get("js", []) +
+            self.r.get("graphql", [])
         )
         # Solo CRITICAL y HIGH — nada de ruido
         all_sources = [f for f in all_sources
@@ -849,6 +852,37 @@ a.cve:hover { text-decoration: underline; }
       </tr>"""
         return self._wrap_section(
             "Análisis JavaScript — API Keys · Secretos · Source Maps",
+            f"""<table><thead><tr>
+              <th>Severidad</th><th>Hallazgo</th>
+              <th>Descripción</th><th>Solución</th>
+            </tr></thead><tbody>{rows}</tbody></table>"""
+        )
+
+    # ── GraphQL ───────────────────────────────────────────────────────────────
+
+    def _section_graphql(self) -> str:
+        items = sorted(self.r.get("graphql", []),
+                       key=lambda x: SEVERITY_ORDER.get(x.get("severidad", "UNKNOWN"), 99))
+        if not items:
+            return ""
+        rows = ""
+        for f in items:
+            sev = f.get("severidad", "INFO")
+            color = SEVERITY_COLOR.get(sev, "#999")
+            impacto = f.get("impacto", "")
+            impacto_html = (
+                f'<div style="margin-top:5px;font-size:0.78rem;color:#c0392b;">'
+                f'<strong>⚠ Impacto:</strong> {impacto}</div>'
+            ) if impacto else ""
+            rows += f"""
+      <tr>
+        <td><span class="badge" style="background:{color};">{SEVERITY_ES.get(sev, sev)}</span></td>
+        <td><strong>{f.get('nombre','')}</strong>{impacto_html}</td>
+        <td style="font-size:0.82rem;">{f.get('descripcion','')}</td>
+        <td style="font-size:0.82rem;color:#555;">{f.get('recomendacion','')}</td>
+      </tr>"""
+        return self._wrap_section(
+            "Auditoría GraphQL — Introspección · Autenticación · DoS",
             f"""<table><thead><tr>
               <th>Severidad</th><th>Hallazgo</th>
               <th>Descripción</th><th>Solución</th>
