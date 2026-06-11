@@ -20,6 +20,7 @@ from modules.osint import OSINTScanner
 from modules.webapp import WebAppScanner
 from modules.wifi import WiFiAuditor, RedLocalAuditor
 from modules.cms import CMSDetector
+from modules.auth import AuthAuditor
 from modules.report import ReportGenerator
 
 BANNER = """
@@ -168,6 +169,7 @@ def main():
         "webapp":       [],
         "wifi":         [],
         "cms":          [],
+        "auth":         [],
     }
 
     # ── FASE 0: OSINT externo ─────────────────────────────────────────────────
@@ -254,6 +256,12 @@ def main():
                 accesos = len([c for c in creds_local if c["acceso"]])
                 print(f"\n[+] Accesos obtenidos en red local: {accesos}")
 
+        print_phase("3a", "Auditoría de autenticación — bypass, fuerza bruta, sesión")
+        auth = AuthAuditor(args.target, results["recon"], stealth=args.stealth)
+        results["auth"] = auth.scan()
+        criticos_auth = len([f for f in results["auth"] if f.get("severidad") in ("CRITICAL", "HIGH")])
+        print(f"\n[+] Hallazgos autenticación críticos/altos: {criticos_auth}")
+
         if not args.skip_webapp:
             print_phase("3b", "Análisis OWASP — inyecciones y vulnerabilidades web")
             checks = [c.strip() for c in args.webapp_checks.split(",")]
@@ -289,7 +297,8 @@ def main():
     # ── Resumen ───────────────────────────────────────────────────────────────
     all_findings = (results["vulns"] + results["misconfigs"] + results["web"] +
                     results["ssl"] + results["dns"] + results["email"] +
-                    results["osint"] + results["webapp"] + results["wifi"] + results["cms"])
+                    results["osint"] + results["webapp"] + results["wifi"] +
+                    results["cms"] + results["auth"])
     criticos = sum(1 for f in all_findings if f.get("severidad") == "CRITICAL")
     altos    = sum(1 for f in all_findings if f.get("severidad") == "HIGH")
     medios   = sum(1 for f in all_findings if f.get("severidad") == "MEDIUM")
