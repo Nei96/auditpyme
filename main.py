@@ -81,9 +81,9 @@ def parse_args():
     parser.add_argument("--wifi-subred", default=None,
                         help="Subred a escanear en modo red-local (ej: 192.168.1.0/24)\n"
                              "Por defecto: autodetección desde la interfaz WiFi")
-    parser.add_argument("--webapp-checks", default="sqli,xss,lfi,redirect,cmdi,csrf,idor",
+    parser.add_argument("--webapp-checks", default="sqli,xss,lfi,redirect,cmdi,csrf,idor,ssrf,xxe",
                         help="Checks OWASP a ejecutar (separados por coma)\n"
-                             "Disponibles: sqli, xss, lfi, redirect, cmdi, csrf, idor")
+                             "Disponibles: sqli, xss, lfi, redirect, cmdi, csrf, idor, ssrf, xxe")
     parser.add_argument("--no-pdf",      action="store_true",
                         help="No generar PDF, solo HTML")
     parser.add_argument("--stealth", action="store_true",
