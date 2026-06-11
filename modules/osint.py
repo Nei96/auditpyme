@@ -315,15 +315,10 @@ class OSINTScanner:
                 result = sock.connect_ex((target_ip, port))
                 sock.close()
                 if result == 0:
-                    # Si hay CDN delante, bajar severidad de puertos web alternativos
-                    real_severity = severity
-                    real_desc = desc
                     if behind_cdn and port in (8080, 8443):
-                        real_severity = "LOW"
-                        real_desc = (f"{desc} — Mitigado parcialmente por {behind_cdn}. "
-                                     f"Verificar si el servidor origen también filtra este puerto.")
-                    exposed.append((port, service, real_severity, real_desc))
-                    print(f"  [{real_severity}] Puerto {port} ({service}) accesible desde internet")
+                        continue
+                    exposed.append((port, service, severity, desc))
+                    print(f"  [{severity}] Puerto {port} ({service}) accesible desde internet")
             except Exception:
                 pass
 
