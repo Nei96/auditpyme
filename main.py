@@ -25,6 +25,7 @@ from modules.jsanalysis import JSAnalyzer
 from modules.graphql import GraphQLAuditor
 from modules.fileupload import FileUploadAuditor
 from modules.business_logic import BusinessLogicAuditor
+from modules.discovery import SiteDiscovery
 from modules.report import ReportGenerator
 
 BANNER = """
@@ -106,6 +107,10 @@ def parse_args():
     parser.add_argument("--skip-bizlogic",  action="store_true", help="Omitir análisis de lógica de negocio")
     parser.add_argument("--skip-auth",      action="store_true", help="Omitir auditoría de autenticación")
     parser.add_argument("--skip-cms",       action="store_true", help="Omitir fingerprinting de CMS")
+    parser.add_argument("--skip-discovery", action="store_true",
+                        help="Omitir descubrimiento inteligente (deshabilita el auto-skip de módulos)")
+    parser.add_argument("--force-all", action="store_true",
+                        help="Forzar todos los módulos aunque discovery no los detecte")
     return parser.parse_args()
 
 
@@ -149,6 +154,43 @@ def _build_webapp_targets(target: str, recon: dict) -> list:
                 if url not in urls:
                     urls.append(url)
     return urls or [target]
+
+
+def _apply_autoskip(args, profile: dict):
+    """Auto-omite módulos que no tienen sentido según el perfil del sitio."""
+    skipped = []
+
+    # JS: solo vale la pena si hay archivos JS
+    if not args.skip_js and profile.get("js_files_count", 0) == 0:
+        args.skip_js = True
+        skipped.append("JS (sin archivos JS detectados)")
+
+    # GraphQL: solo si existe endpoint
+    if not args.skip_graphql and not profile.get("has_graphql"):
+        args.skip_graphql = True
+        skipped.append("GraphQL (sin endpoint detectado)")
+
+    # File Upload: solo si hay formulario de subida
+    if not args.skip_fileupload and not profile.get("has_file_upload"):
+        args.skip_fileupload = True
+        skipped.append("File Upload (sin formulario de subida)")
+
+    # Lógica de negocio: solo si hay e-commerce
+    if not args.skip_bizlogic and not profile.get("has_ecommerce"):
+        args.skip_bizlogic = True
+        skipped.append("Lógica de negocio (sin e-commerce detectado)")
+
+    # Autenticación: solo si hay login
+    if not args.skip_auth and not profile.get("has_login"):
+        args.skip_auth = True
+        skipped.append("Auth (sin formulario de login detectado)")
+
+    if skipped:
+        print(f"\n  [AUTO-SKIP] Módulos omitidos por no ser relevantes para este sitio:")
+        for s in skipped:
+            print(f"    · {s}")
+    else:
+        print("  [*] Todos los módulos son relevantes para este sitio")
 
 
 def main():
@@ -224,6 +266,19 @@ def main():
         results["vulns"]      = vuln_results["cves"]
         results["misconfigs"] = vuln_results["misconfigs"]
         print(f"\n[+] CVEs: {len(results['vulns'])} | Configuraciones: {len(results['misconfigs'])}")
+
+        # ── FASE 2a: Descubrimiento inteligente ──────────────────────────────────
+        site_profile = {}
+        if not args.skip_discovery:
+            print_phase("2a", "Descubrimiento de sitio — funcionalidades y tecnologías")
+            discovery = SiteDiscovery(args.target, results["recon"])
+            site_profile = discovery.discover()
+            results["profile"] = site_profile
+
+            if not args.force_all:
+                _apply_autoskip(args, site_profile)
+        else:
+            print("\n[*] Descubrimiento omitido (--skip-discovery)")
 
         if not args.skip_web:
             print_phase("2b", "Análisis web")
