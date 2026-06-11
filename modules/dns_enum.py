@@ -116,7 +116,7 @@ class DNSEnumerator:
         self._check_zone_transfer(dns)
         self._check_spf_dmarc(dns)
         subdomains = self._brute_subdomains()
-        self._check_takeover(dns, subdomains)
+        self._check_takeover(dns, subdomains)  # dns aquí es el módulo real
 
         return self.findings
 
@@ -279,23 +279,20 @@ class DNSEnumerator:
 
     # ── Subdomain Takeover ────────────────────────────────────────────────────
 
-    def _check_takeover(self, dns, subdomains: list):
+    def _check_takeover(self, dns_mod, subdomains: list):
         """
         Detecta subdomain takeover por dos vías:
         1. CNAME dangling: subdominio apunta vía CNAME a servicio cloud que no resuelve.
         2. HTTP fingerprint: subdominio resuelve pero el servicio cloud no está reclamado.
         También evalúa subdominios que NO resolvieron (NXDOMAIN con CNAME activo).
         """
-        import dns.resolver
-        import dns.exception
-
         print(f"  [*] Comprobando subdomain takeover ({len(COMMON_SUBDOMAINS)} candidatos)...")
         vulnerables = 0
 
         all_candidates = list(COMMON_SUBDOMAINS)  # probar todos, resuelvan o no
         for sub in all_candidates:
             fqdn = f"{sub}.{self.domain}"
-            cname_target = self._get_cname(dns, fqdn)
+            cname_target = self._get_cname(dns_mod, fqdn)
             if not cname_target:
                 continue  # Sin CNAME → no aplica
 
@@ -352,10 +349,10 @@ class DNSEnumerator:
         if vulnerables == 0:
             print("  [OK] No se detectaron subdominios con riesgo de takeover")
 
-    def _get_cname(self, dns, fqdn: str) -> str | None:
+    def _get_cname(self, dns_mod, fqdn: str) -> str | None:
         """Devuelve el destino del registro CNAME si existe, o None."""
         try:
-            answers = dns.resolver.resolve(fqdn, "CNAME", lifetime=4)
+            answers = dns_mod.resolver.resolve(fqdn, "CNAME", lifetime=4)
             return str(answers[0].target)
         except Exception:
             return None
