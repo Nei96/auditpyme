@@ -171,36 +171,39 @@ class WebAnalyzer:
                           "MEDIUM",
                           "Configurar redirección 301 de HTTP a HTTPS en el servidor web.")
 
-    def _get_wildcard_baseline(self, base: str) -> dict | None:
-        """Petición a ruta inventada para detectar servidores que devuelven 200 a todo."""
+    def _get_wildcard_baseline(self, base: str) -> dict:
+        """Petición a ruta inventada para detectar servidores que responden igual a cualquier ruta."""
         canary = f"/canary-{os.urandom(8).hex()}-test"
+        baseline = {"wildcard_codes": set()}
         try:
             resp = requests.get(base + canary, timeout=TIMEOUT, verify=False,
                                 allow_redirects=True,
                                 headers={"User-Agent": "Mozilla/5.0 (compatible; SecurityAudit/1.0)"})
+            baseline["wildcard_codes"].add(resp.status_code)
             if resp.status_code == 200:
                 body = resp.text
-                return {
-                    "size": len(body),
-                    "hash": hashlib.md5(body.encode()).hexdigest(),
-                    "snippet": body[:300],
-                }
+                baseline["size"]    = len(body)
+                baseline["hash"]    = hashlib.md5(body.encode()).hexdigest()
+                baseline["snippet"] = body[:300]
         except Exception:
             pass
-        return None
+        return baseline
 
     def _is_wildcard_hit(self, resp, baseline: dict) -> bool:
-        """Devuelve True si la respuesta es igual o casi igual al baseline wildcard."""
-        body = resp.text
-        size = len(body)
-        # Mismo hash = contenido idéntico
-        if hashlib.md5(body.encode()).hexdigest() == baseline["hash"]:
-            return True
-        # Tamaño muy similar (±5%) = probablemente la misma página
-        if baseline["size"] > 0 and abs(size - baseline["size"]) / baseline["size"] < 0.05:
-            return True
-        # Mismo inicio de contenido
-        if body[:200] == baseline["snippet"][:200]:
+        """Devuelve True si la respuesta es un falso positivo por wildcard."""
+        if resp.status_code in baseline.get("wildcard_codes", set()):
+            # Para 200: comparar contenido
+            if resp.status_code == 200 and "hash" in baseline:
+                body = resp.text
+                if hashlib.md5(body.encode()).hexdigest() == baseline["hash"]:
+                    return True
+                size = len(body)
+                if baseline["size"] > 0 and abs(size - baseline["size"]) / baseline["size"] < 0.05:
+                    return True
+                if body[:200] == baseline["snippet"][:200]:
+                    return True
+                return False
+            # Para 403/401: si el canary ya devolvió ese código, todo es wildcard
             return True
         return False
 
@@ -209,8 +212,9 @@ class WebAnalyzer:
         print(f"  [*] Comprobando {len(SENSITIVE_PATHS)} rutas sensibles...")
 
         baseline = self._get_wildcard_baseline(base)
-        if baseline:
-            print(f"  [!] Wildcard 200 detectado (tamaño: {baseline['size']}B) — se filtrarán falsos positivos")
+        if baseline["wildcard_codes"]:
+            codes = ", ".join(str(c) for c in baseline["wildcard_codes"])
+            print(f"  [!] Wildcard detectado (HTTP {codes} para rutas inexistentes) — se filtrarán falsos positivos")
 
         encontradas = 0
 
@@ -223,11 +227,10 @@ class WebAnalyzer:
                                     headers={"User-Agent": "Mozilla/5.0 (compatible; SecurityAudit/1.0)"})
 
                 if resp.status_code in (200, 401, 403):
-                    if resp.status_code == 200:
-                        if baseline and self._is_wildcard_hit(resp, baseline):
-                            continue
-                        if self._is_cdn_error(resp):
-                            continue
+                    if self._is_wildcard_hit(resp, baseline):
+                        continue
+                    if resp.status_code == 200 and self._is_cdn_error(resp):
+                        continue
 
                     estado = "ACCESIBLE" if resp.status_code == 200 else f"PROTEGIDO ({resp.status_code})"
                     sev_real = severidad if resp.status_code == 200 else "LOW"
