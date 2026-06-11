@@ -100,6 +100,12 @@ def parse_args():
     parser.add_argument("--webapp-user", default=None, help="Usuario para autenticación en la webapp")
     parser.add_argument("--webapp-pass", default=None, help="Contraseña para autenticación en la webapp")
     parser.add_argument("--webapp-login-url", default=None, help="URL del formulario de login (si es distinta a /login)")
+    parser.add_argument("--skip-js",        action="store_true", help="Omitir análisis de JavaScript")
+    parser.add_argument("--skip-graphql",   action="store_true", help="Omitir auditoría GraphQL")
+    parser.add_argument("--skip-fileupload",action="store_true", help="Omitir análisis de subida de archivos")
+    parser.add_argument("--skip-bizlogic",  action="store_true", help="Omitir análisis de lógica de negocio")
+    parser.add_argument("--skip-auth",      action="store_true", help="Omitir auditoría de autenticación")
+    parser.add_argument("--skip-cms",       action="store_true", help="Omitir fingerprinting de CMS")
     return parser.parse_args()
 
 
@@ -224,10 +230,11 @@ def main():
             results["web"] = WebAnalyzer(args.target, results["recon"], stealth=args.stealth).analyze()
             print(f"\n[+] Hallazgos web: {len(results['web'])}")
 
-        print_phase("2b2", "Fingerprinting CMS — WordPress · Joomla · PrestaShop · Laravel")
-        cms_detector = CMSDetector(args.target, results["recon"])
-        results["cms"] = cms_detector.scan()
-        print(f"\n[+] Hallazgos CMS: {len([f for f in results['cms'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
+        if not args.skip_cms:
+            print_phase("2b2", "Fingerprinting CMS — WordPress · Joomla · PrestaShop · Laravel")
+            cms_detector = CMSDetector(args.target, results["recon"])
+            results["cms"] = cms_detector.scan()
+            print(f"\n[+] Hallazgos CMS: {len([f for f in results['cms'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
 
         if not args.skip_ssl:
             print_phase("2c", "Análisis SSL/TLS")
@@ -264,31 +271,36 @@ def main():
                 accesos = len([c for c in creds_local if c["acceso"]])
                 print(f"\n[+] Accesos obtenidos en red local: {accesos}")
 
-        print_phase("2b3", "Análisis JavaScript — secretos, API keys, source maps")
-        js_analyzer = JSAnalyzer(args.target, results["recon"])
-        results["js"] = js_analyzer.scan()
-        print(f"\n[+] Hallazgos JS críticos/altos: {len([f for f in results['js'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
+        if not args.skip_js:
+            print_phase("2b3", "Análisis JavaScript — secretos, API keys, source maps")
+            js_analyzer = JSAnalyzer(args.target, results["recon"])
+            results["js"] = js_analyzer.scan()
+            print(f"\n[+] Hallazgos JS críticos/altos: {len([f for f in results['js'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
 
-        print_phase("2b4", "Auditoría GraphQL — introspección, auth, profundidad")
-        gql = GraphQLAuditor(args.target, results["recon"])
-        results["graphql"] = gql.scan()
-        print(f"\n[+] Hallazgos GraphQL: {len([f for f in results['graphql'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
+        if not args.skip_graphql:
+            print_phase("2b4", "Auditoría GraphQL — introspección, auth, profundidad")
+            gql = GraphQLAuditor(args.target, results["recon"])
+            results["graphql"] = gql.scan()
+            print(f"\n[+] Hallazgos GraphQL: {len([f for f in results['graphql'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
 
-        print_phase("2b5", "Subida de archivos — bypass extensión, RCE, Zip Slip")
-        fu = FileUploadAuditor(args.target, results["recon"], stealth=args.stealth)
-        results["fileupload"] = fu.scan()
-        print(f"\n[+] Hallazgos subida de archivos: {len([f for f in results['fileupload'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
+        if not args.skip_fileupload:
+            print_phase("2b5", "Subida de archivos — bypass extensión, RCE, Zip Slip")
+            fu = FileUploadAuditor(args.target, results["recon"], stealth=args.stealth)
+            results["fileupload"] = fu.scan()
+            print(f"\n[+] Hallazgos subida de archivos: {len([f for f in results['fileupload'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
 
-        print_phase("2b6", "Lógica de negocio — precios, cupones, CORS, mass assignment")
-        biz = BusinessLogicAuditor(args.target, results["recon"], stealth=args.stealth)
-        results["bizlogic"] = biz.scan()
-        print(f"\n[+] Hallazgos lógica de negocio: {len([f for f in results['bizlogic'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
+        if not args.skip_bizlogic:
+            print_phase("2b6", "Lógica de negocio — precios, cupones, CORS, mass assignment")
+            biz = BusinessLogicAuditor(args.target, results["recon"], stealth=args.stealth)
+            results["bizlogic"] = biz.scan()
+            print(f"\n[+] Hallazgos lógica de negocio: {len([f for f in results['bizlogic'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
 
-        print_phase("3a", "Auditoría de autenticación — bypass, fuerza bruta, sesión")
-        auth = AuthAuditor(args.target, results["recon"], stealth=args.stealth)
-        results["auth"] = auth.scan()
-        criticos_auth = len([f for f in results["auth"] if f.get("severidad") in ("CRITICAL", "HIGH")])
-        print(f"\n[+] Hallazgos autenticación críticos/altos: {criticos_auth}")
+        if not args.skip_auth:
+            print_phase("3a", "Auditoría de autenticación — bypass, fuerza bruta, sesión")
+            auth = AuthAuditor(args.target, results["recon"], stealth=args.stealth)
+            results["auth"] = auth.scan()
+            criticos_auth = len([f for f in results["auth"] if f.get("severidad") in ("CRITICAL", "HIGH")])
+            print(f"\n[+] Hallazgos autenticación críticos/altos: {criticos_auth}")
 
         if not args.skip_webapp:
             print_phase("3b", "Análisis OWASP — inyecciones y vulnerabilidades web")

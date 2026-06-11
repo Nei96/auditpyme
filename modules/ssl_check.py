@@ -18,7 +18,7 @@ WEAK_CIPHER_KEYWORDS = [
     "RC2", "IDEA", "SEED", "CAMELLIA_128",
 ]
 
-TIMEOUT = 8
+TIMEOUT = 5
 
 
 class SSLChecker:
@@ -107,6 +107,11 @@ class SSLChecker:
 
     def _probe_weak_version(self, ip: str, port: int, hostname: str, version_str: str):
         """Intenta forzar una versión TLS antigua para ver si el servidor la acepta."""
+        import signal
+
+        def _timeout_handler(signum, frame):
+            raise TimeoutError("SSL probe timeout")
+
         try:
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             ctx.check_hostname = False
@@ -122,17 +127,22 @@ class SSLChecker:
             ctx.maximum_version = ver_map[version_str]
             ctx.minimum_version = ver_map[version_str]
 
-            with socket.create_connection((ip, port), timeout=TIMEOUT) as sock:
-                with ctx.wrap_socket(sock, server_hostname=hostname):
-                    self._add(ip, port, f"Versión TLS débil soportada: {version_str}",
-                              f"El servidor acepta conexiones {version_str}.",
-                              "HIGH",
-                              f"Deshabilitar {version_str} en la configuración TLS del servidor.")
-                    print(f"  [WARN] Servidor acepta {version_str}")
+            signal.signal(signal.SIGALRM, _timeout_handler)
+            signal.alarm(TIMEOUT + 2)
+            try:
+                with socket.create_connection((ip, port), timeout=TIMEOUT) as sock:
+                    with ctx.wrap_socket(sock, server_hostname=hostname):
+                        self._add(ip, port, f"Versión TLS débil soportada: {version_str}",
+                                  f"El servidor acepta conexiones {version_str}.",
+                                  "HIGH",
+                                  f"Deshabilitar {version_str} en la configuración TLS del servidor.")
+                        print(f"  [WARN] Servidor acepta {version_str}")
+            finally:
+                signal.alarm(0)
         except ssl.SSLError:
             print(f"  [OK] Servidor rechaza {version_str}")
-        except AttributeError:
-            pass  # Versión de Python no soporta este TLSVersion
+        except (AttributeError, TimeoutError):
+            pass
         except Exception:
             pass
 
