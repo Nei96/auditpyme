@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+informes/
+reporte_*.html
+reporte_*.pdf
+.env
+*.key

@@ -1,0 +1,16 @@
+services:
+  auditpyme:
+    build: .
+    image: auditpyme:1.0
+    container_name: auditpyme
+    # Necesario para que nmap haga detección de OS
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    network_mode: host
+    volumes:
+      # Los informes se guardan aquí en el host
+      - ./informes:/informes
+    # Ejemplo de uso:
+    #   docker compose run auditpyme empresa.com --empresa "Empresa SL" --auditor "Nathan" -o /informes/empresa
+    entrypoint: ["python3", "main.py"]
