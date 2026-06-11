@@ -88,6 +88,12 @@ def parse_args():
                         help="No generar PDF, solo HTML")
     parser.add_argument("--stealth", action="store_true",
                         help="Modo sigiloso: nmap T2 + scan-delay 1s, pausas entre peticiones web")
+    parser.add_argument("--webapp-url", default=None,
+                        help="URL base para el análisis OWASP (ej: http://localhost:8888/WebGoat/)\n"
+                             "Por defecto: se infiere de los puertos web detectados por nmap")
+    parser.add_argument("--webapp-user", default=None, help="Usuario para autenticación en la webapp")
+    parser.add_argument("--webapp-pass", default=None, help="Contraseña para autenticación en la webapp")
+    parser.add_argument("--webapp-login-url", default=None, help="URL del formulario de login (si es distinta a /login)")
     return parser.parse_args()
 
 
@@ -113,6 +119,24 @@ def apply_profile(args):
     elif args.perfil == "rapido":
         args.skip_creds = True
         print("[*] Perfil RÁPIDO: recon + email + OSINT (sin credenciales)")
+
+
+def _build_webapp_targets(target: str, recon: dict) -> list:
+    """Construye URLs web desde los puertos HTTP detectados por nmap."""
+    urls = []
+    for host in recon.get("hosts", []):
+        if host["estado"] != "up":
+            continue
+        for p in host["puertos"]:
+            port = p["puerto"]
+            svc = p["servicio"].lower()
+            if "http" in svc or port in (80, 443, 8080, 8443, 8888):
+                proto = "https" if port in (443, 8443) else "http"
+                base = target
+                url = f"{proto}://{base}:{port}" if port not in (80, 443) else f"{proto}://{base}"
+                if url not in urls:
+                    urls.append(url)
+    return urls or [target]
 
 
 def main():
@@ -226,8 +250,16 @@ def main():
         if not args.skip_webapp:
             print_phase("3b", "Análisis OWASP — inyecciones y vulnerabilidades web")
             checks = [c.strip() for c in args.webapp_checks.split(",")]
-            webapp = WebAppScanner(args.target, checks=checks, stealth=args.stealth)
-            results["webapp"] = webapp.scan()
+            # Usar URL explícita si se proporciona, si no construir desde recon
+            if args.webapp_url:
+                webapp_targets = [args.webapp_url]
+            else:
+                webapp_targets = _build_webapp_targets(args.target, results["recon"])
+            for webapp_target in webapp_targets:
+                scanner = WebAppScanner(webapp_target, checks=checks, stealth=args.stealth,
+                                       auth_user=args.webapp_user, auth_pass=args.webapp_pass,
+                                       auth_url=args.webapp_login_url)
+                results["webapp"] += scanner.scan()
             print(f"\n[+] Hallazgos OWASP: {len([f for f in results['webapp'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
 
     # ── FASE 4: Informe ───────────────────────────────────────────────────────

@@ -598,10 +598,14 @@ REDIRECT_PARAM_KEYWORDS = (
 
 
 class WebAppScanner:
-    def __init__(self, target: str, checks: list = None, stealth: bool = False):
+    def __init__(self, target: str, checks: list = None, stealth: bool = False,
+                 auth_user: str = None, auth_pass: str = None, auth_url: str = None):
         self.target = self._normalize_url(target)
         self.checks = checks or ["sqli", "xss", "lfi", "redirect", "cmdi", "csrf", "idor", "ssrf", "xxe"]
         self.delay = 1.5 if stealth else 0
+        self.auth_user = auth_user
+        self.auth_pass = auth_pass
+        self.auth_url = auth_url
         self.findings = []
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": UA})
@@ -610,9 +614,30 @@ class WebAppScanner:
         self._forms = []
         self._params = []
 
+    def _login(self):
+        """Intenta autenticarse antes de rastrear."""
+        login_url = self.auth_url or (self.target + "/login")
+        try:
+            resp = self.session.get(login_url, timeout=TIMEOUT)
+            # Buscar campos del formulario de login
+            inputs = re.findall(r'<input[^>]*name=["\']([^"\']+)["\']', resp.text, re.IGNORECASE)
+            user_field = next((f for f in inputs if any(k in f.lower() for k in ("user", "email", "login", "name"))), "username")
+            pass_field = next((f for f in inputs if any(k in f.lower() for k in ("pass", "pwd", "secret"))), "password")
+            data = {user_field: self.auth_user, pass_field: self.auth_pass}
+            r = self.session.post(login_url, data=data, timeout=TIMEOUT, allow_redirects=True)
+            if r.status_code in (200, 302):
+                print(f"  [*] Login como '{self.auth_user}' — HTTP {r.status_code}")
+                return True
+        except Exception as e:
+            print(f"  [!] Error en login: {e}")
+        return False
+
     def scan(self) -> list:
         print(f"\n  [*] WebApp scan: {self.target}")
         print(f"  [*] Checks activos: {', '.join(self.checks)}")
+
+        if self.auth_user:
+            self._login()
 
         self._crawl(self.target, depth=2)
         print(f"\n  [*] Encontrados: {len(self._forms)} formularios, {len(self._params)} URLs con parámetros")
