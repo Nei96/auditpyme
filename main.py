@@ -32,6 +32,8 @@ from modules.ssti import SSTIScanner
 from modules.jwt_audit import JWTAuditor
 from modules.injection import InjectionScanner
 from modules.exposed import ExposedScanner
+from modules.wp_exploit import WordPressExploiter
+from modules.api import APIScanner
 from modules.report import ReportGenerator
 
 BANNER = """
@@ -116,8 +118,12 @@ def parse_args():
     parser.add_argument("--skip-jwt",       action="store_true", help="Omitir auditoría JWT")
     parser.add_argument("--skip-injection", action="store_true",
                         help="Omitir inyecciones avanzadas (NoSQL, LDAP, XPath, CRLF, HPP)")
-    parser.add_argument("--skip-exposed",  action="store_true",
+    parser.add_argument("--skip-exposed",   action="store_true",
                         help="Omitir búsqueda de paneles expuestos y archivos sensibles")
+    parser.add_argument("--skip-wp-exploit", action="store_true",
+                        help="Omitir explotación profunda WordPress (git dump, multicall brute, brute force)")
+    parser.add_argument("--skip-api",     action="store_true",
+                        help="Omitir auditoría profunda de API REST (BOLA, mass assignment, BFLA)")
     parser.add_argument("--skip-cms",       action="store_true", help="Omitir fingerprinting de CMS")
     parser.add_argument("--skip-ad",        action="store_true", help="Omitir auditoría Active Directory / LDAP")
     parser.add_argument("--ad-user",   default=None, help="Usuario de dominio para auditoría AD (ej: jperez)")
@@ -247,6 +253,8 @@ def main():
         "jwt":          [],
         "injection":    [],
         "exposed":      [],
+        "wp_exploit":   [],
+        "api":          [],
     }
 
     # ── FASE 0: OSINT externo ─────────────────────────────────────────────────
@@ -378,6 +386,20 @@ def main():
             results["bizlogic"] = biz.scan()
             print(f"\n[+] Hallazgos lógica de negocio: {len([f for f in results['bizlogic'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
 
+        if not args.skip_wp_exploit:
+            print_phase("2b9", "Explotación WordPress — git dump · xmlrpc multicall · brute force dirigido")
+            wp_exp = WordPressExploiter(args.target, results["recon"], stealth=args.stealth)
+            results["wp_exploit"] = wp_exp.scan()
+            print(f"\n[+] Hallazgos WP exploit: {len([f for f in results['wp_exploit'] if f.get('severidad') == 'CRITICAL'])}")
+
+        if not args.skip_api:
+            print_phase("2b10", "Auditoría API REST — BOLA · Mass Assignment · BFLA · Versioning")
+            api = APIScanner(args.target, results["recon"],
+                             auth_user=args.webapp_user, auth_pass=args.webapp_pass,
+                             auth_url=args.webapp_login_url, stealth=args.stealth)
+            results["api"] = api.scan()
+            print(f"\n[+] Hallazgos API: {len([f for f in results['api'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
+
         if not args.skip_ssti:
             print_phase("2b7", "SSTI — Server-Side Template Injection")
             ssti = SSTIScanner(args.target, results["recon"], stealth=args.stealth)
@@ -462,7 +484,8 @@ def main():
                     results["cms"] + results["auth"] + results["js"] +
                     results["graphql"] + results["fileupload"] + results["bizlogic"] +
                     results["ssti"] + results["jwt"] + results["ad"] +
-                    results["injection"] + results["exposed"])
+                    results["injection"] + results["exposed"] +
+                    results["wp_exploit"] + results["api"])
     criticos = sum(1 for f in all_findings if f.get("severidad") == "CRITICAL")
     altos    = sum(1 for f in all_findings if f.get("severidad") == "HIGH")
     medios   = sum(1 for f in all_findings if f.get("severidad") == "MEDIUM")

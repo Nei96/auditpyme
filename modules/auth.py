@@ -78,6 +78,7 @@ class AuthAuditor:
         print(f"\n  [*] Auditoría de autenticación en: {self.target}")
         for base_url in self._base_urls:
             self._check_password_reset(base_url)
+            self._check_oauth(base_url)
             login_info = self._find_login_form(base_url)
             if not login_info:
                 print(f"  [-] No se encontró formulario de login en {base_url}")
@@ -90,6 +91,7 @@ class AuthAuditor:
             self._check_user_enumeration(login_url, user_field, pass_field, extra_fields)
             self._check_password_spray(login_url, user_field, pass_field, extra_fields)
             self._check_session_fixation(base_url, login_url)
+            self._check_2fa_bypass(base_url, login_url, user_field, pass_field, extra_fields)
 
         if not self.findings:
             print("  [OK] No se detectaron vulnerabilidades críticas de autenticación")
@@ -487,6 +489,251 @@ class AuthAuditor:
                 print(f"  [MEDIUM] Sin rate limiting en password reset")
         except Exception:
             pass
+
+    # ── Check 7: OAuth 2.0 ────────────────────────────────────────────────────
+
+    def _check_oauth(self, base_url: str):
+        """Detecta flujos OAuth expuestos y prueba fallos comunes."""
+        print(f"  [*] Buscando flujos OAuth en {base_url}...")
+
+        # Detectar botones/enlaces OAuth en la página
+        oauth_patterns = [
+            r'href=["\']([^"\']*(?:oauth|authorize|auth/google|auth/facebook|'
+            r'auth/github|login/google|login/facebook|connect/google|'
+            r'sso|saml|openid)[^"\']*)["\']',
+        ]
+        oauth_urls = []
+        try:
+            r = self.session.get(base_url, timeout=TIMEOUT)
+            for pat in oauth_patterns:
+                for m in re.finditer(pat, r.text, re.IGNORECASE):
+                    url = m.group(1)
+                    if not url.startswith("http"):
+                        url = base_url.rstrip("/") + "/" + url.lstrip("/")
+                    oauth_urls.append(url)
+        except Exception:
+            pass
+
+        # También buscar endpoints OAuth comunes
+        common_oauth_paths = [
+            "/oauth/authorize", "/oauth2/authorize", "/auth/authorize",
+            "/connect/authorize", "/api/oauth/authorize",
+            "/login/oauth/authorize", "/.well-known/openid-configuration",
+        ]
+        for path in common_oauth_paths:
+            url = base_url.rstrip("/") + path
+            try:
+                r = self.session.get(url, timeout=TIMEOUT, allow_redirects=False)
+                if r.status_code in (200, 302, 400):
+                    oauth_urls.append(url)
+            except Exception:
+                pass
+
+        if not oauth_urls:
+            print("  [-] No se detectaron flujos OAuth")
+            return
+
+        print(f"  [+] Flujos OAuth detectados: {len(oauth_urls)}")
+        for oauth_url in oauth_urls[:3]:
+            self._test_oauth_state(oauth_url)
+            self._test_oauth_redirect_uri(oauth_url)
+
+    def _test_oauth_state(self, oauth_url: str):
+        """Verifica si el parámetro state es obligatorio (protección CSRF)."""
+        try:
+            # Petición sin parámetro state
+            test_url = oauth_url
+            if "?" not in oauth_url:
+                test_url += "?client_id=test&response_type=code&redirect_uri=https://example.com/callback"
+            r = self.session.get(test_url, timeout=TIMEOUT, allow_redirects=False)
+
+            # Si redirige sin requerir state → posible CSRF OAuth
+            if r.status_code == 302:
+                loc = r.headers.get("Location", "")
+                if "state" not in loc and "error" not in loc.lower():
+                    self._add(
+                        "HIGH",
+                        "OAuth — Parámetro state no requerido (CSRF posible)",
+                        f"El endpoint OAuth {oauth_url} redirige sin validar el parámetro 'state'. "
+                        "Petición de prueba devolvió redirect sin state.",
+                        "Un atacante puede realizar un ataque CSRF para vincular la cuenta de la víctima "
+                        "con la cuenta del atacante (account linking attack) o completar un flujo OAuth "
+                        "en nombre de la víctima sin su consentimiento.",
+                        "Generar un 'state' criptográficamente aleatorio en cada solicitud de autorización. "
+                        "Validar que el state recibido en el callback coincide con el enviado. "
+                        "Rechazar peticiones sin state o con state no reconocido."
+                    )
+                    print(f"  [HIGH] OAuth sin state en {oauth_url}")
+        except Exception:
+            pass
+
+    def _test_oauth_redirect_uri(self, oauth_url: str):
+        """Prueba si redirect_uri puede ser manipulada para exfiltrar tokens."""
+        evil_redirects = [
+            "https://attacker-auditpyme.com/callback",
+            "https://example.com.attacker.com/callback",
+            "https://example.com/callback/../../../attacker",
+            "https://example.com/callback?extra=https://attacker.com",
+        ]
+        try:
+            parsed = re.search(r'redirect_uri=([^&]+)', oauth_url)
+            if not parsed:
+                return
+            for evil_uri in evil_redirects[:2]:
+                test_url = re.sub(r'redirect_uri=[^&]+', f'redirect_uri={evil_uri}', oauth_url)
+                r = self.session.get(test_url, timeout=TIMEOUT, allow_redirects=False)
+                if r.status_code == 302:
+                    loc = r.headers.get("Location", "")
+                    if "attacker" in loc or "error" not in loc.lower():
+                        self._add(
+                            "CRITICAL",
+                            "OAuth — redirect_uri no validada (robo de tokens)",
+                            f"El servidor OAuth acepta redirect_uri arbitraria en {oauth_url}. "
+                            f"redirect_uri probada: {evil_uri} → respuesta: HTTP {r.status_code}",
+                            "Un atacante puede reemplazar el redirect_uri por su propio servidor y "
+                            "recibir el authorization code o access token de la víctima, "
+                            "obteniendo acceso completo a su cuenta.",
+                            "Validar redirect_uri contra una lista blanca exacta registrada en el servidor. "
+                            "No permitir coincidencias parciales ni wildcards. "
+                            "Rechazar cualquier redirect_uri no registrada exactamente."
+                        )
+                        print(f"  [CRITICAL] OAuth redirect_uri bypass: {evil_uri}")
+                        return
+        except Exception:
+            pass
+
+    # ── Check 8: 2FA bypass ───────────────────────────────────────────────────
+
+    def _check_2fa_bypass(self, base_url: str, login_url: str,
+                          user_field: str, pass_field: str, extra: dict):
+        """Detecta páginas de 2FA y prueba bypasses comunes."""
+        print("  [*] Buscando y probando 2FA bypass...")
+
+        # Buscar si hay paso de 2FA después del login
+        twofa_patterns = [
+            r'type=["\']number["\'][^>]*name=["\']([^"\']*(?:otp|code|token|2fa|totp|mfa)[^"\']*)["\']',
+            r'name=["\']([^"\']*(?:otp|code|verification|2fa|totp|mfa|pin)[^"\']*)["\']',
+        ]
+
+        twofa_url = None
+        twofa_field = None
+
+        # Buscar directamente en rutas comunes de 2FA
+        twofa_paths = [
+            "/two-factor", "/2fa", "/mfa", "/otp", "/verify",
+            "/auth/2fa", "/user/2fa", "/account/2fa",
+            "/login/2fa", "/login/verify", "/authenticate",
+        ]
+
+        for path in twofa_paths:
+            url = base_url.rstrip("/") + path
+            try:
+                r = self.session.get(url, timeout=TIMEOUT)
+                if r.status_code == 200:
+                    for pat in twofa_patterns:
+                        m = re.search(pat, r.text, re.IGNORECASE)
+                        if m:
+                            twofa_url = url
+                            twofa_field = m.group(1)
+                            break
+                if twofa_url:
+                    break
+            except Exception:
+                pass
+
+        if not twofa_url:
+            print("  [-] Página de 2FA no detectada")
+            return
+
+        print(f"  [+] Página de 2FA detectada: {twofa_url} (campo: {twofa_field})")
+
+        # Test 1: Bypass directo — acceder a área protegida sin pasar por 2FA
+        protected_paths = ["/dashboard", "/admin", "/panel", "/home", "/account"]
+        for ppath in protected_paths:
+            try:
+                r = self.session.get(base_url.rstrip("/") + ppath, timeout=TIMEOUT)
+                if r.status_code == 200 and not any(
+                    w in r.url.lower() for w in ("login", "2fa", "verify", "otp")
+                ):
+                    self._add(
+                        "CRITICAL",
+                        "2FA bypass — acceso directo a área protegida sin verificar OTP",
+                        f"Es posible acceder a {ppath} sin completar el paso de 2FA. "
+                        f"La sesión establecida en el login no requiere la verificación OTP.",
+                        "Un atacante con credenciales robadas puede eludir el 2FA navegando "
+                        "directamente a páginas protegidas, haciendo el 2FA completamente inútil.",
+                        "Implementar verificación de 2FA como middleware en TODAS las rutas protegidas. "
+                        "Usar un flag de sesión 'mfa_verified' que se compruebe antes de servir cualquier "
+                        "recurso autenticado."
+                    )
+                    print(f"  [CRITICAL] 2FA bypass directo en {ppath}")
+                    return
+            except Exception:
+                pass
+
+        # Test 2: Código de prueba triviales (sin fuerza bruta exhaustiva)
+        trivial_codes = [
+            "000000", "123456", "111111", "123123", "654321",
+            "000001", "999999", "112233", "121212",
+        ]
+
+        bloqueado = False
+        for code in trivial_codes:
+            try:
+                time.sleep(self.delay)
+                r = self.session.post(twofa_url, data={twofa_field: code},
+                                      timeout=TIMEOUT, allow_redirects=False)
+                if r.status_code == 429 or "locked" in r.text.lower() or "bloqueado" in r.text.lower():
+                    bloqueado = True
+                    print(f"  [OK] 2FA rate limiting activo (código {code})")
+                    break
+            except Exception:
+                pass
+
+        if not bloqueado:
+            self._add(
+                "HIGH",
+                "2FA — Sin rate limiting en página de verificación OTP",
+                f"Se enviaron {len(trivial_codes)} códigos OTP a {twofa_url} sin recibir bloqueo ni 429.",
+                "Sin rate limiting en el paso de 2FA, un atacante puede hacer fuerza bruta "
+                "de los 1.000.000 códigos TOTP de 6 dígitos. Con 100 req/s se agota en ~3 horas. "
+                "Si el código no caduca rápido (30s estándar TOTP) el ataque es más rápido.",
+                "Implementar rate limiting en el endpoint de verificación OTP: "
+                "máx. 5 intentos, después bloqueo de cuenta o CAPTCHA. "
+                "Invalidar el código tras cada intento fallido (TOTP ya lo hace, pero verificarlo)."
+            )
+            print(f"  [HIGH] 2FA sin rate limiting — {len(trivial_codes)} intentos sin bloqueo")
+
+        # Test 3: Reutilización de código — probar el mismo código dos veces
+        if not bloqueado and trivial_codes:
+            last_code = trivial_codes[0]
+            try:
+                time.sleep(self.delay)
+                r1 = self.session.post(twofa_url, data={twofa_field: last_code},
+                                       timeout=TIMEOUT, allow_redirects=False)
+                time.sleep(0.5)
+                r2 = self.session.post(twofa_url, data={twofa_field: last_code},
+                                       timeout=TIMEOUT, allow_redirects=False)
+                # Si el segundo intento NO devuelve error de código ya usado
+                if (r1.status_code == r2.status_code and
+                        "invalid" not in r2.text.lower() and
+                        "used" not in r2.text.lower() and
+                        "already" not in r2.text.lower()):
+                    self._add(
+                        "MEDIUM",
+                        "2FA — Posible reutilización de código OTP",
+                        f"El mismo código OTP fue aceptado dos veces en {twofa_url} "
+                        "sin error de 'código ya utilizado'.",
+                        "Si el servidor no invalida el OTP tras el primer uso, un atacante "
+                        "que intercepte el código (phishing en tiempo real) puede reutilizarlo "
+                        "para autenticarse después de que la víctima ya lo haya usado.",
+                        "Invalidar cada código OTP inmediatamente tras su primer uso. "
+                        "Para TOTP: rechazar el mismo counter/timestamp si ya fue validado. "
+                        "Mantener una lista de tokens TOTP ya usados en el último intervalo."
+                    )
+                    print("  [MEDIUM] Posible reutilización de código OTP")
+            except Exception:
+                pass
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

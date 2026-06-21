@@ -139,6 +139,8 @@ class ReportGenerator:
   {self._section_fileupload()}
   {self._section_bizlogic()}
   {self._section_auth()}
+  {self._section_wp_exploit()}
+  {self._section_api()}
   {self._section_ssti()}
   {self._section_jwt()}
   {self._section_injection()}
@@ -1133,6 +1135,68 @@ a.cve:hover { text-decoration: underline; }
       </tr>"""
         return self._wrap_section(
             "Paneles Expuestos y Archivos Sensibles — phpMyAdmin · Adminer · .env · Backups",
+            f"""<table><thead><tr>
+              <th>Severidad</th><th>Hallazgo</th>
+              <th>Descripción</th><th>Solución</th>
+            </tr></thead><tbody>{rows}</tbody></table>"""
+        )
+
+    # ── WordPress Exploit ─────────────────────────────────────────────────────
+
+    def _section_wp_exploit(self) -> str:
+        items = sorted(self.r.get("wp_exploit", []),
+                       key=lambda x: SEVERITY_ORDER.get(x.get("severidad", "UNKNOWN"), 99))
+        if not items:
+            return ""
+        rows = ""
+        for f in items:
+            sev = f.get("severidad", "INFO")
+            color = SEVERITY_COLOR.get(sev, "#999")
+            impacto = f.get("impacto", "")
+            impacto_html = (
+                f'<div style="margin-top:5px;font-size:0.78rem;color:#c0392b;">'
+                f'<strong>⚠ Impacto:</strong> {impacto}</div>'
+            ) if impacto else ""
+            rows += f"""
+      <tr>
+        <td><span class="badge" style="background:{color};">{SEVERITY_ES.get(sev, sev)}</span></td>
+        <td><strong>{f.get('nombre','')}</strong>{impacto_html}</td>
+        <td style="font-size:0.82rem;">{f.get('descripcion','')}</td>
+        <td style="font-size:0.82rem;color:#555;">{f.get('recomendacion','')}</td>
+      </tr>"""
+        return self._wrap_section(
+            "Explotación WordPress — Git Dump · xmlrpc Multicall · Brute Force Dirigido",
+            f"""<table><thead><tr>
+              <th>Severidad</th><th>Hallazgo</th>
+              <th>Descripción</th><th>Solución</th>
+            </tr></thead><tbody>{rows}</tbody></table>"""
+        )
+
+    # ── API REST ──────────────────────────────────────────────────────────────
+
+    def _section_api(self) -> str:
+        items = sorted(self.r.get("api", []),
+                       key=lambda x: SEVERITY_ORDER.get(x.get("severidad", "UNKNOWN"), 99))
+        if not items:
+            return ""
+        rows = ""
+        for f in items:
+            sev = f.get("severidad", "INFO")
+            color = SEVERITY_COLOR.get(sev, "#999")
+            impacto = f.get("impacto", "")
+            impacto_html = (
+                f'<div style="margin-top:5px;font-size:0.78rem;color:#c0392b;">'
+                f'<strong>⚠ Impacto:</strong> {impacto}</div>'
+            ) if impacto else ""
+            rows += f"""
+      <tr>
+        <td><span class="badge" style="background:{color};">{SEVERITY_ES.get(sev, sev)}</span></td>
+        <td><strong>{f.get('nombre','')}</strong>{impacto_html}</td>
+        <td style="font-size:0.82rem;">{f.get('descripcion','')}</td>
+        <td style="font-size:0.82rem;color:#555;">{f.get('recomendacion','')}</td>
+      </tr>"""
+        return self._wrap_section(
+            "Auditoría API REST — BOLA/IDOR · Mass Assignment · BFLA · Versioning",
             f"""<table><thead><tr>
               <th>Severidad</th><th>Hallazgo</th>
               <th>Descripción</th><th>Solución</th>
