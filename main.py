@@ -30,6 +30,7 @@ from modules.discovery import SiteDiscovery
 from modules.active_directory import ActiveDirectoryAuditor
 from modules.ssti import SSTIScanner
 from modules.jwt_audit import JWTAuditor
+from modules.injection import InjectionScanner
 from modules.report import ReportGenerator
 
 BANNER = """
@@ -112,6 +113,8 @@ def parse_args():
     parser.add_argument("--skip-auth",      action="store_true", help="Omitir auditoría de autenticación")
     parser.add_argument("--skip-ssti",      action="store_true", help="Omitir detección de SSTI")
     parser.add_argument("--skip-jwt",       action="store_true", help="Omitir auditoría JWT")
+    parser.add_argument("--skip-injection", action="store_true",
+                        help="Omitir inyecciones avanzadas (NoSQL, LDAP, XPath, CRLF, HPP)")
     parser.add_argument("--skip-cms",       action="store_true", help="Omitir fingerprinting de CMS")
     parser.add_argument("--skip-ad",        action="store_true", help="Omitir auditoría Active Directory / LDAP")
     parser.add_argument("--ad-user",   default=None, help="Usuario de dominio para auditoría AD (ej: jperez)")
@@ -239,6 +242,7 @@ def main():
         "bizlogic":     [],
         "ssti":         [],
         "jwt":          [],
+        "injection":    [],
     }
 
     # ── FASE 0: OSINT externo ─────────────────────────────────────────────────
@@ -369,6 +373,13 @@ def main():
             results["ssti"] = ssti.scan()
             print(f"\n[+] Hallazgos SSTI: {len([f for f in results['ssti'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
 
+        if not args.skip_injection:
+            print_phase("2b8", "Inyecciones avanzadas — NoSQL · LDAP · XPath · CRLF · HPP")
+            inj = InjectionScanner(args.target, results["recon"], stealth=args.stealth)
+            results["injection"] = inj.scan()
+            criticos_inj = len([f for f in results["injection"] if f.get("severidad") in ("CRITICAL", "HIGH")])
+            print(f"\n[+] Hallazgos inyecciones avanzadas: {criticos_inj}")
+
         if not args.skip_auth:
             print_phase("3a", "Auditoría de autenticación — bypass, fuerza bruta, sesión, password reset")
             auth = AuthAuditor(args.target, results["recon"], stealth=args.stealth)
@@ -439,7 +450,8 @@ def main():
                     results["osint"] + results["webapp"] + results["wifi"] +
                     results["cms"] + results["auth"] + results["js"] +
                     results["graphql"] + results["fileupload"] + results["bizlogic"] +
-                    results["ssti"] + results["jwt"] + results["ad"])
+                    results["ssti"] + results["jwt"] + results["ad"] +
+                    results["injection"])
     criticos = sum(1 for f in all_findings if f.get("severidad") == "CRITICAL")
     altos    = sum(1 for f in all_findings if f.get("severidad") == "HIGH")
     medios   = sum(1 for f in all_findings if f.get("severidad") == "MEDIUM")

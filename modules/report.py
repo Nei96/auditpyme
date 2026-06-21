@@ -138,6 +138,9 @@ class ReportGenerator:
   {self._section_fileupload()}
   {self._section_bizlogic()}
   {self._section_auth()}
+  {self._section_ssti()}
+  {self._section_jwt()}
+  {self._section_injection()}
   {self._section_webapp()}
   {self._section_recon()}
   {self._section_wifi()}
@@ -1098,6 +1101,99 @@ a.cve:hover { text-decoration: underline; }
 
         return self._wrap_section(
             "Active Directory / LDAP — Usuarios · Kerberos · Privilegios · SMB",
+            f"""<table><thead><tr>
+              <th>Severidad</th><th>Hallazgo</th>
+              <th>Descripción</th><th>Solución</th>
+            </tr></thead><tbody>{rows}</tbody></table>"""
+        )
+
+    # ── SSTI ───────────────────────────────────────────────────────────────────
+
+    def _section_ssti(self) -> str:
+        items = sorted(self.r.get("ssti", []),
+                       key=lambda x: SEVERITY_ORDER.get(x.get("severidad", "UNKNOWN"), 99))
+        if not items:
+            return ""
+        rows = ""
+        for f in items:
+            sev = f.get("severidad", "INFO")
+            color = SEVERITY_COLOR.get(sev, "#999")
+            impacto = f.get("impacto", "")
+            impacto_html = (
+                f'<div style="margin-top:5px;font-size:0.78rem;color:#c0392b;">'
+                f'<strong>⚠ Impacto:</strong> {impacto}</div>'
+            ) if impacto else ""
+            rows += f"""
+      <tr>
+        <td><span class="badge" style="background:{color};">{SEVERITY_ES.get(sev, sev)}</span></td>
+        <td><strong>{f.get('nombre','')}</strong>{impacto_html}</td>
+        <td style="font-size:0.82rem;">{f.get('descripcion','')}</td>
+        <td style="font-size:0.82rem;color:#555;">{f.get('recomendacion','')}</td>
+      </tr>"""
+        return self._wrap_section(
+            "SSTI — Server-Side Template Injection",
+            f"""<table><thead><tr>
+              <th>Severidad</th><th>Hallazgo</th>
+              <th>Descripción</th><th>Solución</th>
+            </tr></thead><tbody>{rows}</tbody></table>"""
+        )
+
+    # ── JWT ────────────────────────────────────────────────────────────────────
+
+    def _section_jwt(self) -> str:
+        items = sorted(self.r.get("jwt", []),
+                       key=lambda x: SEVERITY_ORDER.get(x.get("severidad", "UNKNOWN"), 99))
+        if not items:
+            return ""
+        rows = ""
+        for f in items:
+            sev = f.get("severidad", "INFO")
+            color = SEVERITY_COLOR.get(sev, "#999")
+            impacto = f.get("impacto", "")
+            impacto_html = (
+                f'<div style="margin-top:5px;font-size:0.78rem;color:#c0392b;">'
+                f'<strong>⚠ Impacto:</strong> {impacto}</div>'
+            ) if impacto else ""
+            rows += f"""
+      <tr>
+        <td><span class="badge" style="background:{color};">{SEVERITY_ES.get(sev, sev)}</span></td>
+        <td><strong>{f.get('nombre','')}</strong>{impacto_html}</td>
+        <td style="font-size:0.82rem;">{f.get('descripcion','')}</td>
+        <td style="font-size:0.82rem;color:#555;">{f.get('recomendacion','')}</td>
+      </tr>"""
+        return self._wrap_section(
+            "Auditoría JWT — alg:none · Secreto Débil · JWKS Expuesto",
+            f"""<table><thead><tr>
+              <th>Severidad</th><th>Hallazgo</th>
+              <th>Descripción</th><th>Solución</th>
+            </tr></thead><tbody>{rows}</tbody></table>"""
+        )
+
+    # ── Inyecciones avanzadas ──────────────────────────────────────────────────
+
+    def _section_injection(self) -> str:
+        items = sorted(self.r.get("injection", []),
+                       key=lambda x: SEVERITY_ORDER.get(x.get("severidad", "UNKNOWN"), 99))
+        if not items:
+            return ""
+        rows = ""
+        for f in items:
+            sev = f.get("severidad", "INFO")
+            color = SEVERITY_COLOR.get(sev, "#999")
+            impacto = f.get("impacto", "")
+            impacto_html = (
+                f'<div style="margin-top:5px;font-size:0.78rem;color:#c0392b;">'
+                f'<strong>⚠ Impacto:</strong> {impacto}</div>'
+            ) if impacto else ""
+            rows += f"""
+      <tr>
+        <td><span class="badge" style="background:{color};">{SEVERITY_ES.get(sev, sev)}</span></td>
+        <td><strong>{f.get('nombre','')}</strong>{impacto_html}</td>
+        <td style="font-size:0.82rem;">{f.get('descripcion','')}</td>
+        <td style="font-size:0.82rem;color:#555;">{f.get('recomendacion','')}</td>
+      </tr>"""
+        return self._wrap_section(
+            "Inyecciones Avanzadas — NoSQL · LDAP · XPath · CRLF · HPP",
             f"""<table><thead><tr>
               <th>Severidad</th><th>Hallazgo</th>
               <th>Descripción</th><th>Solución</th>
