@@ -8,6 +8,7 @@ import requests
 import urllib3
 import re
 import time
+import hashlib
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 TIMEOUT = 10
@@ -76,6 +77,7 @@ class AuthAuditor:
     def scan(self) -> list:
         print(f"\n  [*] Auditoría de autenticación en: {self.target}")
         for base_url in self._base_urls:
+            self._check_password_reset(base_url)
             login_info = self._find_login_form(base_url)
             if not login_info:
                 print(f"  [-] No se encontró formulario de login en {base_url}")
@@ -335,6 +337,154 @@ class AuthAuditor:
                                 "En PHP: session_set_cookie_params(['httponly'=>true])."
                             )
                             print(f"  [MEDIUM] Cookie '{name}' sin HttpOnly")
+        except Exception:
+            pass
+
+    # ── Check 6: Password reset flaws ────────────────────────────────────────
+
+    def _check_password_reset(self, base_url: str):
+        """
+        Detecta fallos en el reset de contraseña:
+        - Host header injection: el email de reset incluye el host del atacante
+        - Token en URL (GET-based reset = token expuesto en logs/referrer)
+        - Reset sin rate limiting
+        - Token predecible (hash MD5/SHA1 del email o timestamp)
+        """
+        RESET_PATHS = [
+            "/forgot-password", "/forgot_password", "/password-reset",
+            "/reset-password", "/password/reset", "/account/forgot",
+            "/user/forgot", "/users/password/new", "/auth/forgot",
+            "/recuperar", "/recuperar-contrasena", "/olvide-contrasena",
+            "/wp-login.php?action=lostpassword",
+        ]
+        print(f"  [*] Comprobando password reset en {base_url}...")
+
+        reset_url = None
+        email_field = None
+
+        for path in RESET_PATHS:
+            url = base_url.rstrip("/") + path
+            try:
+                resp = self.session.get(url, timeout=TIMEOUT, allow_redirects=True)
+                if resp.status_code != 200:
+                    continue
+                # Buscar campo de email
+                forms = re.findall(r'<form[^>]*>(.*?)</form>', resp.text, re.IGNORECASE | re.DOTALL)
+                for form_html in forms:
+                    inputs = re.findall(r'<input[^>]+>', form_html, re.IGNORECASE)
+                    for tag in inputs:
+                        name_m = re.search(r'name=["\']([^"\']+)["\']', tag, re.IGNORECASE)
+                        type_m = re.search(r'type=["\']([^"\']+)["\']', tag, re.IGNORECASE)
+                        if name_m and type_m and type_m.group(1).lower() in ("email", "text"):
+                            if any(k in name_m.group(1).lower() for k in ("email", "user", "login")):
+                                reset_url = resp.url
+                                email_field = name_m.group(1)
+                                break
+                    if email_field:
+                        break
+                if email_field:
+                    break
+            except Exception:
+                continue
+
+        if not reset_url:
+            print("  [-] Endpoint de password reset no encontrado")
+            return
+
+        print(f"  [+] Reset endpoint: {reset_url} (campo: {email_field})")
+
+        # Test 1: Host header injection
+        try:
+            time.sleep(self.delay)
+            evil_host = "attacker-auditpyme.com"
+            r = self.session.post(reset_url,
+                                  data={email_field: "admin@test.com"},
+                                  timeout=TIMEOUT,
+                                  allow_redirects=True,
+                                  headers={
+                                      "Host": evil_host,
+                                      "X-Forwarded-Host": evil_host,
+                                      "X-Host": evil_host,
+                                  })
+            # Si la respuesta es exitosa y no muestra error de host inválido
+            body = r.text.lower()
+            if r.status_code in (200, 302) and any(
+                w in body for w in ("email sent", "email enviado", "check your email",
+                                    "revisa tu correo", "sent", "enviado", "link sent",
+                                    "instructions", "instrucciones")
+            ):
+                self._add(
+                    "HIGH",
+                    "Password reset — posible Host Header Injection",
+                    f"El endpoint de reset ({reset_url}) aceptó una petición con Host: {evil_host} "
+                    f"y devolvió respuesta de éxito (HTTP {r.status_code}). "
+                    "Si el servidor construye el enlace de reset usando el header Host, "
+                    "el email enviado a la víctima contendrá un enlace al dominio del atacante.",
+                    "Un atacante puede solicitar reset para la cuenta de la víctima con Host: attacker.com. "
+                    "La víctima recibe: 'Haz clic aquí para resetear: https://attacker.com/reset?token=...' "
+                    "y cuando pincha, el token llega al servidor del atacante.",
+                    "Nunca construir URLs de reset usando el header Host de la petición. "
+                    "Hardcodear el dominio base en la configuración del servidor. "
+                    "En Django: USE_X_FORWARDED_HOST = False. En Laravel: APP_URL en .env."
+                )
+                print(f"  [HIGH] Host Header Injection en password reset")
+        except Exception:
+            pass
+
+        # Test 2: Token en URL (reset link via GET)
+        try:
+            # Comprobar si la app tiene tokens en la URL de la página actual
+            for test_path in ["/reset-password?token=test123", "/password/reset?t=abc123",
+                               "/users/password/edit?reset_password_token=abc123"]:
+                url = base_url.rstrip("/") + test_path
+                r = self.session.get(url, timeout=TIMEOUT, allow_redirects=True)
+                if r.status_code == 200 and any(
+                    w in r.text.lower() for w in ("new password", "nueva contraseña",
+                                                   "reset", "token", "password")
+                ):
+                    self._add(
+                        "MEDIUM",
+                        "Token de reset en parámetro GET de la URL",
+                        f"El enlace de reset incluye el token en la URL ({test_path}). "
+                        "Esto expone el token en: logs del servidor, header Referer (al navegar a otro sitio), "
+                        "historial del navegador y herramientas de análisis como Google Analytics.",
+                        "El token de reset puede filtrarse a terceros a través del header Referer "
+                        "si la página de reset carga recursos externos (scripts, imágenes, analytics). "
+                        "Un atacante con acceso a los logs puede usar el token sin conocer la contraseña.",
+                        "Enviar el token via POST en lugar de GET. "
+                        "Usar tokens de un solo uso (invalidar tras el primer uso). "
+                        "Invalidar el token tras 15 minutos si no se usa."
+                    )
+                    print(f"  [MEDIUM] Token de reset en URL: {test_path}")
+                    break
+        except Exception:
+            pass
+
+        # Test 3: Rate limiting en reset
+        try:
+            bloqueado = False
+            for i in range(10):
+                time.sleep(0.1)
+                r = self.session.post(reset_url,
+                                      data={email_field: f"test{i}@example.com"},
+                                      timeout=TIMEOUT, allow_redirects=False)
+                if r.status_code == 429 or "captcha" in r.text.lower() or "bloqueado" in r.text.lower():
+                    bloqueado = True
+                    print(f"  [OK] Rate limiting en password reset (intento {i+1})")
+                    break
+            if not bloqueado:
+                self._add(
+                    "MEDIUM",
+                    "Sin rate limiting en password reset",
+                    f"10 peticiones de reset consecutivas sin bloqueo en {reset_url}.",
+                    "Un atacante puede inundar el buzón de cualquier usuario con emails de reset, "
+                    "causando denegación de servicio de correo. También facilita ataques de enumeración "
+                    "de usuarios por timing si hay diferencia entre usuario existente y no existente.",
+                    "Limitar a 3-5 peticiones de reset por IP por hora. "
+                    "Añadir CAPTCHA tras el 2º intento. "
+                    "Devolver siempre el mismo mensaje independientemente de si el email existe."
+                )
+                print(f"  [MEDIUM] Sin rate limiting en password reset")
         except Exception:
             pass
 

@@ -7,6 +7,7 @@ Uso: sudo python3 main.py <target> [opciones]
 import argparse
 import sys
 import os
+import json
 from datetime import datetime
 
 from modules.recon import Recon
@@ -26,6 +27,9 @@ from modules.graphql import GraphQLAuditor
 from modules.fileupload import FileUploadAuditor
 from modules.business_logic import BusinessLogicAuditor
 from modules.discovery import SiteDiscovery
+from modules.active_directory import ActiveDirectoryAuditor
+from modules.ssti import SSTIScanner
+from modules.jwt_audit import JWTAuditor
 from modules.report import ReportGenerator
 
 BANNER = """
@@ -106,7 +110,13 @@ def parse_args():
     parser.add_argument("--skip-fileupload",action="store_true", help="Omitir análisis de subida de archivos")
     parser.add_argument("--skip-bizlogic",  action="store_true", help="Omitir análisis de lógica de negocio")
     parser.add_argument("--skip-auth",      action="store_true", help="Omitir auditoría de autenticación")
+    parser.add_argument("--skip-ssti",      action="store_true", help="Omitir detección de SSTI")
+    parser.add_argument("--skip-jwt",       action="store_true", help="Omitir auditoría JWT")
     parser.add_argument("--skip-cms",       action="store_true", help="Omitir fingerprinting de CMS")
+    parser.add_argument("--skip-ad",        action="store_true", help="Omitir auditoría Active Directory / LDAP")
+    parser.add_argument("--ad-user",   default=None, help="Usuario de dominio para auditoría AD (ej: jperez)")
+    parser.add_argument("--ad-pass",   default=None, help="Contraseña del usuario de dominio")
+    parser.add_argument("--ad-domain", default=None, help="Nombre de dominio AD (ej: empresa.local)")
     parser.add_argument("--skip-discovery", action="store_true",
                         help="Omitir descubrimiento inteligente (deshabilita el auto-skip de módulos)")
     parser.add_argument("--force-all", action="store_true",
@@ -220,12 +230,15 @@ def main():
         "osint":        [],
         "webapp":       [],
         "wifi":         [],
+        "ad":           [],
         "cms":          [],
         "auth":         [],
         "js":           [],
         "graphql":      [],
         "fileupload":   [],
         "bizlogic":     [],
+        "ssti":         [],
+        "jwt":          [],
     }
 
     # ── FASE 0: OSINT externo ─────────────────────────────────────────────────
@@ -350,12 +363,27 @@ def main():
             results["bizlogic"] = biz.scan()
             print(f"\n[+] Hallazgos lógica de negocio: {len([f for f in results['bizlogic'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
 
+        if not args.skip_ssti:
+            print_phase("2b7", "SSTI — Server-Side Template Injection")
+            ssti = SSTIScanner(args.target, results["recon"], stealth=args.stealth)
+            results["ssti"] = ssti.scan()
+            print(f"\n[+] Hallazgos SSTI: {len([f for f in results['ssti'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
+
         if not args.skip_auth:
-            print_phase("3a", "Auditoría de autenticación — bypass, fuerza bruta, sesión")
+            print_phase("3a", "Auditoría de autenticación — bypass, fuerza bruta, sesión, password reset")
             auth = AuthAuditor(args.target, results["recon"], stealth=args.stealth)
             results["auth"] = auth.scan()
             criticos_auth = len([f for f in results["auth"] if f.get("severidad") in ("CRITICAL", "HIGH")])
             print(f"\n[+] Hallazgos autenticación críticos/altos: {criticos_auth}")
+
+        if not args.skip_jwt:
+            print_phase("3a2", "Auditoría JWT — alg:none, secreto débil, JWKS")
+            jwt_auditor = JWTAuditor(args.target, results["recon"],
+                                     auth_user=args.webapp_user,
+                                     auth_pass=args.webapp_pass,
+                                     auth_url=args.webapp_login_url)
+            results["jwt"] = jwt_auditor.scan()
+            print(f"\n[+] Hallazgos JWT: {len([f for f in results['jwt'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
 
         if not args.skip_webapp:
             print_phase("3b", "Análisis OWASP — inyecciones y vulnerabilidades web")
@@ -371,6 +399,17 @@ def main():
                                        auth_url=args.webapp_login_url)
                 results["webapp"] += scanner.scan()
             print(f"\n[+] Hallazgos OWASP: {len([f for f in results['webapp'] if f.get('severidad') in ('CRITICAL','HIGH')])}")
+
+        if not args.skip_ad:
+            print_phase("3d", "Active Directory / LDAP")
+            ad = ActiveDirectoryAuditor(
+                args.target, results["recon"],
+                ad_user=args.ad_user, ad_pass=args.ad_pass,
+                ad_domain=args.ad_domain or args.target
+            )
+            results["ad"] = ad.scan()
+            criticos_ad = len([f for f in results["ad"] if f.get("severidad") in ("CRITICAL", "HIGH")])
+            print(f"\n[+] Hallazgos AD críticos/altos: {criticos_ad}")
 
     # ── FASE 4: Informe ───────────────────────────────────────────────────────
     print_phase(4, "Generando informe")
@@ -389,12 +428,18 @@ def main():
         except Exception as e:
             print(f"[!] PDF no generado: {e}")
 
+    json_file = base_name + "_results.json"
+    with open(json_file, "w", encoding="utf-8") as f:
+        json.dump(results, f, ensure_ascii=False, indent=2, default=str)
+    print(f"[+] Datos JSON:   {json_file}")
+
     # ── Resumen ───────────────────────────────────────────────────────────────
     all_findings = (results["vulns"] + results["misconfigs"] + results["web"] +
                     results["ssl"] + results["dns"] + results["email"] +
                     results["osint"] + results["webapp"] + results["wifi"] +
                     results["cms"] + results["auth"] + results["js"] +
-                    results["graphql"] + results["fileupload"] + results["bizlogic"])
+                    results["graphql"] + results["fileupload"] + results["bizlogic"] +
+                    results["ssti"] + results["jwt"] + results["ad"])
     criticos = sum(1 for f in all_findings if f.get("severidad") == "CRITICAL")
     altos    = sum(1 for f in all_findings if f.get("severidad") == "HIGH")
     medios   = sum(1 for f in all_findings if f.get("severidad") == "MEDIUM")

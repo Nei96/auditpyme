@@ -14,3 +14,24 @@ services:
     # Ejemplo de uso:
     #   docker compose run auditpyme empresa.com --empresa "Empresa SL" --auditor "Nathan" -o /informes/empresa
     entrypoint: ["python3", "main.py"]
+
+  # Laboratorio OWASP — http://localhost:8888/WebGoat
+  # Arrancar: docker compose up -d webgoat
+  # Parar:    docker compose stop webgoat
+  webgoat:
+    image: webgoat/goat-and-wolf:v8.2.2
+    container_name: webgoat
+    ports:
+      - "8888:8080"
+      - "9090:9090"
+    environment:
+      - TZ=Europe/Madrid
+
+  # Laboratorio DVWA — http://localhost:8080  (admin/password)
+  # Arrancar: docker compose up -d dvwa
+  # Parar:    docker compose stop dvwa
+  dvwa:
+    image: vulnerables/web-dvwa
+    container_name: dvwa
+    ports:
+      - "8080:80"

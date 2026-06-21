@@ -676,12 +676,27 @@ class WebAppScanner:
 
         return self.findings
 
+    # Rutas administrativas que no deben recibir payloads de inyección
+    _SKIP_INJECT_PATHS = (
+        "/setup", "/install", "/admin/setup", "/wp-admin/install",
+        "/phpMyAdmin", "/phpmyadmin", "/adminer",
+    )
+
+    # Rutas que no deben crawlearse: logout, borrado, o acciones destructivas
+    _SKIP_CRAWL_PATHS = (
+        "logout", "signout", "sign-out", "log-out",
+        "delete", "remove", "destroy", "reset-password",
+        "wp-login.php?action=logout",
+    )
+
     # ── Crawler ───────────────────────────────────────────────────────────────
 
     def _crawl(self, url: str, depth: int):
         if depth == 0 or url in self._visited or len(self._visited) > 50:
             return
         if not url.startswith(self.target):
+            return
+        if any(p in url.lower() for p in self._SKIP_CRAWL_PATHS):
             return
 
         self._visited.add(url)
@@ -690,24 +705,40 @@ class WebAppScanner:
         except Exception:
             return
 
-        # Extraer formularios
+        # Extraer formularios — capturar atributos del tag y body por separado
         forms = re.findall(
-            r'<form[^>]*action=["\']?([^"\'> ]*)["\']?[^>]*>(.*?)</form>',
+            r'<form([^>]*)>(.*?)</form>',
             resp.text, re.IGNORECASE | re.DOTALL
         )
-        for action, body in forms:
-            form_url = urljoin(url, action) if action else url
-            method = "post" if 'method="post"' in body.lower() or "method='post'" in body.lower() else "get"
-            inputs = re.findall(
-                r'<input[^>]*name=["\']([^"\']+)["\'][^>]*(?:value=["\']([^"\']*)["\'])?',
-                body, re.IGNORECASE
-            )
-            fields = {name: value or "test" for name, value in inputs if name.lower() not in ("submit", "_token", "csrf")}
-            csrf_token = any(n.lower() in ("csrf_token", "_token", "csrf", "token") for n, _ in inputs)
+        for attrs, body in forms:
+            action_m = re.search(r'action=["\']?([^"\'> ]+)["\']?', attrs, re.IGNORECASE)
+            action = action_m.group(1) if action_m else ""
+            form_url = urljoin(url, action) if action and action != "#" else url
+            method = "post" if re.search(r'method=["\']?post["\']?', attrs, re.IGNORECASE) else "get"
+            input_tags = re.findall(r'<input[^>]+>', body, re.IGNORECASE)
+            fixed = {}   # submit buttons + CSRF tokens: se envían siempre sin inyectar
+            fields = {}  # campos inyectables
+            csrf_token = False
+            for tag in input_tags:
+                name_m  = re.search(r'name=["\']([^"\']+)["\']', tag, re.IGNORECASE)
+                type_m  = re.search(r'type=["\']([^"\']+)["\']', tag, re.IGNORECASE)
+                value_m = re.search(r'value=["\']([^"\']*)["\']', tag, re.IGNORECASE)
+                if not name_m:
+                    continue
+                name  = name_m.group(1)
+                ftype = type_m.group(1).lower() if type_m else "text"
+                value = value_m.group(1) if value_m else ""
+                if ftype in ("submit", "button", "image", "reset"):
+                    fixed[name] = value
+                elif name.lower() in ("_token", "csrf_token", "csrf", "token", "user_token"):
+                    fixed[name] = value
+                    csrf_token = True
+                elif ftype not in ("hidden",) or name.lower() not in ("_token", "csrf_token"):
+                    fields[name] = value or "test"
             if fields:
                 self._forms.append({
                     "url": form_url, "method": method,
-                    "fields": fields, "has_csrf": csrf_token,
+                    "fields": fields, "fixed": fixed, "has_csrf": csrf_token,
                     "page": url
                 })
 
@@ -748,9 +779,11 @@ class WebAppScanner:
 
         # En formularios
         for form in self._forms[:10]:
+            if any(p in form["url"] for p in self._SKIP_INJECT_PATHS):
+                continue
             for field in form["fields"]:
                 for payload in SQLI_ERROR_PAYLOADS[:4]:
-                    data = {**form["fields"], field: payload}
+                    data = {**form["fields"], **form.get("fixed", {}), field: payload}
                     try:
                         time.sleep(self.delay)
                         if form["method"] == "post":
@@ -810,9 +843,11 @@ class WebAppScanner:
         found = 0
 
         for form in self._forms[:10]:
+            if any(p in form["url"] for p in self._SKIP_INJECT_PATHS):
+                continue
             for field in form["fields"]:
                 for payload in XSS_PAYLOADS[:3]:
-                    data = {**form["fields"], field: payload}
+                    data = {**form["fields"], **form.get("fixed", {}), field: payload}
                     try:
                         time.sleep(self.delay)
                         if form["method"] == "post":
@@ -941,9 +976,11 @@ class WebAppScanner:
         found = 0
 
         for form in self._forms[:5]:
+            if any(p in form["url"] for p in self._SKIP_INJECT_PATHS):
+                continue
             for field in form["fields"]:
                 for payload in CMDI_PAYLOADS:
-                    data = {**form["fields"], field: f"test{payload}"}
+                    data = {**form["fields"], **form.get("fixed", {}), field: f"test{payload}"}
                     try:
                         t0 = time.time()
                         if form["method"] == "post":
@@ -966,9 +1003,11 @@ class WebAppScanner:
 
         # CMDi time-based con ping (alternativa a sleep)
         for form in self._forms[:5]:
+            if any(p in form["url"] for p in self._SKIP_INJECT_PATHS):
+                continue
             for field in form["fields"]:
                 for payload in ["; ping -c 4 127.0.0.1", "& ping -n 4 127.0.0.1 &"]:
-                    data = {**form["fields"], field: f"test{payload}"}
+                    data = {**form["fields"], **form.get("fixed", {}), field: f"test{payload}"}
                     try:
                         t0 = time.time()
                         if form["method"] == "post":

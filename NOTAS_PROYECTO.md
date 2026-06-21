@@ -108,7 +108,11 @@ cd ~/nerd-dictation && ./nerd-dictation end
 - **Puertos 8080/8443** detrás de Cloudflare son LOW, no MEDIUM → implementado `_detect_cdn()`
 - **Gmail bloquea spoofing** desde IPs sin PTR record → desde VPS sí funcionaría
 - **nmap -O requiere root** → implementado fallback sin detección de OS si no hay root
-- **testphp.vulnweb.com** no accesible desde la VM → usar WebGoat local para pruebas OWASP
+- **webapp.py — 3 bugs corregidos el 12/06/2026** (validación DVWA):
+  1. El crawler visitaba `/logout.php` → cerraba sesión antes de los checks → 0 detecciones
+  2. Botones Submit se filtraban del request → PHP no procesaba el formulario → SQLi/XSS/CMDi no disparaban
+  3. `method="post"` se buscaba en el body del form, no en el tag → forms POST se enviaban como GET
+- **DVWA no representa a un cliente real** — sin WAF, sin WordPress, sin Cloudflare. Los bugs corregidos son más relevantes para clientes con PHP custom, PrestaShop o Joomla sin CDN.
 
 ### Dominios verificados como prueba
 - `gohomephysio.es` — propiedad de Nathan, sin email configurado, Cloudflare
@@ -119,12 +123,45 @@ cd ~/nerd-dictation && ./nerd-dictation end
 
 ## Roadmap pendiente
 - [x] Módulo WiFi (seguridad inalámbrica — del curso BAG)
+- [x] Logo y marca propia en el informe PDF (escudo SVG "AP" inline en report.py)
+- [x] Laboratorio DVWA/WebGoat en docker-compose (dvwa:8080, webgoat:8888)
+- [x] Validar webapp.py contra DVWA — 6/6 hallazgos detectados (SQLi×2, XSS×2, LFI, CMDi)
+- [x] Comparativa histórica entre auditorías del mismo cliente (17/06/2026)
 - [ ] Módulo Active Directory / LDAP (para mediana empresa)
-- [ ] Logo y marca propia en el informe PDF
 - [ ] Registrar `auditpyme.es` para demo de spoofing
-- [ ] Laboratorio local WebGoat para probar módulo OWASP
-- [ ] Comparativa histórica entre auditorías del mismo cliente
 - [ ] Dashboard web multi-cliente (fase avanzada)
+
+---
+
+## Comparativa histórica (17/06/2026)
+
+**Cómo funciona:**
+- Cada auditoría ahora guarda automáticamente `<output>_results.json` con todos los datos crudos
+- `comparar.py` carga 2+ JSONs y genera un informe HTML+PDF de evolución
+
+**Uso:**
+```bash
+# Comparar dos auditorías del mismo cliente
+python3 comparar.py informes/cliente_20260601_results.json informes/cliente_20260617_results.json
+
+# Comparar serie histórica (3+)
+python3 comparar.py aud_enero.json aud_marzo.json aud_junio.json -o informes/evolucion_cliente
+
+# Solo HTML sin PDF
+python3 comparar.py aud1.json aud2.json --no-pdf
+```
+
+**Qué muestra el informe:**
+- Tarjetas resumen de cada auditoría (críticos/altos/medios/bajos/accesos)
+- Puntuación de riesgo 0-100 con barra de evolución y delta entre auditorías
+- Vulnerabilidades **nuevas** (aparecieron) — rojo
+- Vulnerabilidades **resueltas** (desaparecieron) — verde
+- Hallazgos que **empeoraron** de severidad — rojo oscuro
+- Hallazgos que **mejoraron** de severidad — amarillo
+- Hallazgos **persistentes** (sin resolver en varias auditorías) — naranja
+- Conclusión automática: mejorado / estable / empeorado con justificación
+
+**Identificación de hallazgos:** por clave `tipo::nombre` — robusto ante pequeños cambios de descripción.
 
 ---
 

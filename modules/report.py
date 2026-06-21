@@ -93,7 +93,8 @@ class ReportGenerator:
             self.r.get("js", []) +
             self.r.get("graphql", []) +
             self.r.get("fileupload", []) +
-            self.r.get("bizlogic", [])
+            self.r.get("bizlogic", []) +
+            self.r.get("ad", [])
         )
 
     def generate(self, output_path: str):
@@ -130,6 +131,7 @@ class ReportGenerator:
   {self._chart_svg(counts)}
   {self._section_osint()}
   {self._section_email()}
+  {self._section_ad()}
   {self._section_cms()}
   {self._section_js()}
   {self._section_graphql()}
@@ -151,7 +153,7 @@ class ReportGenerator:
 </div>
 
 <div class="footer">
-  Generado por AuditPyme v1.0 · {self.r.get('fecha_fin', '')}
+  <strong style="color:#2c3e50;">AuditPyme</strong> v1.0 &nbsp;·&nbsp; {self.r.get('fecha_fin', '')} &nbsp;·&nbsp; Nathan Matos Paes
 </div>
 </body>
 </html>"""
@@ -167,6 +169,9 @@ body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f2f5; color: #
   background: linear-gradient(135deg, #0d1117 0%, #161b22 60%, #1a3a5c 100%);
   color: white; padding: 44px 64px;
 }
+.header-inner { display: flex; align-items: center; gap: 32px; }
+.header-logo { flex-shrink: 0; }
+.header-content { flex: 1; }
 .header h1 { font-size: 1.9rem; letter-spacing: 3px; font-weight: 300; }
 .header h1 strong { font-weight: 700; }
 .header .subtitle { color: #8b9ec0; margin-top: 6px; font-size: 0.88rem; letter-spacing: 1px; }
@@ -269,16 +274,29 @@ a.cve:hover { text-decoration: underline; }
     def _header(self, risk: dict) -> str:
         empresa = self.r.get("empresa") or "No especificada"
         auditor = self.r.get("auditor") or "No especificado"
+        logo_svg = """<svg width="60" height="68" viewBox="0 0 60 68" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M30 3L5 14V33C5 48.5 16 62 30 67C44 62 55 48.5 55 33V14L30 3Z"
+        fill="#0f2a4a" stroke="#4a9eff" stroke-width="2.2"/>
+  <path d="M30 10L11 19V33C11 44.5 19.5 55 30 59C40.5 55 49 44.5 49 33V19L30 10Z"
+        fill="#0d1f38" opacity="0.7"/>
+  <text x="30" y="40" text-anchor="middle" fill="#4a9eff"
+        font-family="'Segoe UI',Arial,sans-serif" font-size="17" font-weight="800" letter-spacing="1">AP</text>
+</svg>"""
         return f"""
 <div class="header">
-  <h1><strong>INFORME</strong> DE AUDITORÍA DE SEGURIDAD</h1>
-  <div class="subtitle">AuditPyme v1.0 · Reconocimiento · Vulnerabilidades · Análisis Web · SSL · DNS</div>
-  <div class="meta">
-    <div class="meta-item"><strong>{self.r.get('target','')}</strong>Objetivo</div>
-    <div class="meta-item"><strong>{empresa}</strong>Empresa auditada</div>
-    <div class="meta-item"><strong>{auditor}</strong>Auditor</div>
-    <div class="meta-item"><strong>{self.r.get('fecha_inicio','')}</strong>Inicio</div>
-    <div class="meta-item"><strong>{self.r.get('fecha_fin','')}</strong>Fin</div>
+  <div class="header-inner">
+    <div class="header-logo">{logo_svg}</div>
+    <div class="header-content">
+      <h1><strong>INFORME</strong> DE AUDITORÍA DE SEGURIDAD</h1>
+      <div class="subtitle">AuditPyme v1.0 · Reconocimiento · Vulnerabilidades · Análisis Web · SSL · DNS</div>
+      <div class="meta">
+        <div class="meta-item"><strong>{self.r.get('target','')}</strong>Objetivo</div>
+        <div class="meta-item"><strong>{empresa}</strong>Empresa auditada</div>
+        <div class="meta-item"><strong>{auditor}</strong>Auditor</div>
+        <div class="meta-item"><strong>{self.r.get('fecha_inicio','')}</strong>Inicio</div>
+        <div class="meta-item"><strong>{self.r.get('fecha_fin','')}</strong>Fin</div>
+      </div>
+    </div>
   </div>
 </div>"""
 
@@ -652,7 +670,8 @@ a.cve:hover { text-decoration: underline; }
             self.r.get("js", []) +
             self.r.get("graphql", []) +
             self.r.get("fileupload", []) +
-            self.r.get("bizlogic", [])
+            self.r.get("bizlogic", []) +
+            self.r.get("ad", [])
         )
         # Solo CRITICAL y HIGH — nada de ruido
         all_sources = [f for f in all_sources
@@ -1048,6 +1067,37 @@ a.cve:hover { text-decoration: underline; }
 
         return self._wrap_section(
             "Auditoría WiFi — Redes Inalámbricas",
+            f"""<table><thead><tr>
+              <th>Severidad</th><th>Hallazgo</th>
+              <th>Descripción</th><th>Solución</th>
+            </tr></thead><tbody>{rows}</tbody></table>"""
+        )
+
+    # ── Active Directory ───────────────────────────────────────────────────────
+
+    def _section_ad(self) -> str:
+        items = sorted(self.r.get("ad", []),
+                       key=lambda x: SEVERITY_ORDER.get(x.get("severidad", "UNKNOWN"), 99))
+        if not items:
+            return ""
+        items_visible = [i for i in items if i.get("severidad") != "INFO"]
+        if not items_visible:
+            return ""
+
+        rows = ""
+        for f in items_visible:
+            sev = f.get("severidad", "INFO")
+            color = SEVERITY_COLOR.get(sev, "#999")
+            rows += f"""
+      <tr>
+        <td><span class="badge" style="background:{color};">{SEVERITY_ES.get(sev, sev)}</span></td>
+        <td><strong>{f.get('nombre','')}</strong></td>
+        <td style="font-size:0.82rem;">{f.get('descripcion','')}</td>
+        <td style="font-size:0.82rem;color:#555;">{f.get('recomendacion','')}</td>
+      </tr>"""
+
+        return self._wrap_section(
+            "Active Directory / LDAP — Usuarios · Kerberos · Privilegios · SMB",
             f"""<table><thead><tr>
               <th>Severidad</th><th>Hallazgo</th>
               <th>Descripción</th><th>Solución</th>
