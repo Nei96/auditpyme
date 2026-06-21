@@ -336,7 +336,7 @@ def _audit_card(r: dict, n: int, color: str) -> str:
   </div>"""
 
 
-def build_html(reports: list) -> str:
+def build_html(reports: list, auditor: str = "") -> str:
     """Genera el HTML completo de comparativa. `reports` es lista de dicts results."""
     n = len(reports)
     empresa = reports[-1].get("empresa") or reports[-1].get("target", "—")
@@ -484,7 +484,7 @@ def build_html(reports: list) -> str:
     footer = f"""
 <div class="footer">
   <strong style="color:#2c3e50;">AuditPyme</strong> v1.0 &nbsp;·&nbsp;
-  Comparativa generada el {fecha_gen} &nbsp;·&nbsp; Nathan Matos Paes
+  Comparativa generada el {fecha_gen}{f" &nbsp;·&nbsp; {auditor}" if auditor else ""}
 </div>"""
 
     return f"""<!DOCTYPE html>
@@ -521,6 +521,7 @@ def main():
         help="Nombre base del informe de salida (sin extensión)"
     )
     parser.add_argument("--no-pdf", action="store_true", help="Solo HTML, sin PDF")
+    parser.add_argument("--auditor", default="", help="Nombre del auditor (aparece en el informe)")
     args = parser.parse_args()
 
     if len(args.json_files) < 2:
@@ -540,7 +541,7 @@ def main():
     base = args.output or "comparativa_" + datetime.now().strftime("%Y%m%d_%H%M%S")
     base = base.replace(".html", "").replace(".pdf", "")
 
-    html_content = build_html(reports)
+    html_content = build_html(reports, auditor=args.auditor)
 
     html_file = base + ".html"
     with open(html_file, "w", encoding="utf-8") as f:

@@ -156,7 +156,7 @@ class ReportGenerator:
 </div>
 
 <div class="footer">
-  <strong style="color:#2c3e50;">AuditPyme</strong> v1.0 &nbsp;·&nbsp; {self.r.get('fecha_fin', '')} &nbsp;·&nbsp; Nathan Matos Paes
+  <strong style="color:#2c3e50;">AuditPyme</strong> v1.0 &nbsp;·&nbsp; {self.r.get('fecha_fin', '')} &nbsp;·&nbsp; {self.r.get('auditor', 'AuditPyme')}
 </div>
 </body>
 </html>"""

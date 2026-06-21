@@ -67,7 +67,7 @@ def parse_args():
                         default="1-1024,3306,3389,5432,5900,6379,8080,8443,8888,27017",
                         help="Puertos a escanear (por defecto: top 1024 + servicios comunes)")
     parser.add_argument("--empresa", default="", help="Nombre de la empresa auditada")
-    parser.add_argument("--auditor", default="Nathan Matos Paes", help="Nombre del auditor")
+    parser.add_argument("--auditor", default="", help="Nombre del auditor (aparece en el informe)")
     parser.add_argument("--perfil", default="completo",
                         choices=["externo", "rapido", "completo"],
                         help=(
