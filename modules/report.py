@@ -132,6 +132,7 @@ class ReportGenerator:
   {self._section_osint()}
   {self._section_email()}
   {self._section_ad()}
+  {self._section_exposed()}
   {self._section_cms()}
   {self._section_js()}
   {self._section_graphql()}
@@ -1101,6 +1102,37 @@ a.cve:hover { text-decoration: underline; }
 
         return self._wrap_section(
             "Active Directory / LDAP — Usuarios · Kerberos · Privilegios · SMB",
+            f"""<table><thead><tr>
+              <th>Severidad</th><th>Hallazgo</th>
+              <th>Descripción</th><th>Solución</th>
+            </tr></thead><tbody>{rows}</tbody></table>"""
+        )
+
+    # ── Paneles expuestos y archivos sensibles ────────────────────────────────
+
+    def _section_exposed(self) -> str:
+        items = sorted(self.r.get("exposed", []),
+                       key=lambda x: SEVERITY_ORDER.get(x.get("severidad", "UNKNOWN"), 99))
+        if not items:
+            return ""
+        rows = ""
+        for f in items:
+            sev = f.get("severidad", "INFO")
+            color = SEVERITY_COLOR.get(sev, "#999")
+            impacto = f.get("impacto", "")
+            impacto_html = (
+                f'<div style="margin-top:5px;font-size:0.78rem;color:#c0392b;">'
+                f'<strong>⚠ Impacto:</strong> {impacto}</div>'
+            ) if impacto else ""
+            rows += f"""
+      <tr>
+        <td><span class="badge" style="background:{color};">{SEVERITY_ES.get(sev, sev)}</span></td>
+        <td><strong>{f.get('nombre','')}</strong>{impacto_html}</td>
+        <td style="font-size:0.82rem;">{f.get('descripcion','')}</td>
+        <td style="font-size:0.82rem;color:#555;">{f.get('recomendacion','')}</td>
+      </tr>"""
+        return self._wrap_section(
+            "Paneles Expuestos y Archivos Sensibles — phpMyAdmin · Adminer · .env · Backups",
             f"""<table><thead><tr>
               <th>Severidad</th><th>Hallazgo</th>
               <th>Descripción</th><th>Solución</th>

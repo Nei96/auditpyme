@@ -61,32 +61,181 @@ PLUGIN_CVES = {
          "desc": "SQLi sin autenticación en endpoint de búsqueda de productos.",
          "plugin": "woocommerce"},
     ],
+    "duplicator": [
+        {"cve": "CVE-2022-4015", "componente": "Duplicator <=1.4.7.1", "cvss": 9.8,
+         "desc": "RCE sin autenticación — el instalador duplicator-installer.php no requiere auth "
+                 "y permite sobreescribir wp-config.php con credenciales controladas por el atacante.",
+         "plugin": "duplicator"},
+    ],
+    "all-in-one-wp-migration": [
+        {"cve": "CVE-2023-40004", "componente": "All-in-One WP Migration <=7.78", "cvss": 8.8,
+         "desc": "Path traversal en la exportación — lectura de archivos arbitrarios del servidor.",
+         "plugin": "all-in-one-wp-migration"},
+    ],
+    "wp-super-cache": [
+        {"cve": "CVE-2021-24209", "componente": "WP Super Cache <=1.7.1", "cvss": 9.8,
+         "desc": "RCE autenticado como admin — inyección en opciones de caché que se ejecutan como PHP.",
+         "plugin": "wp-super-cache"},
+    ],
+    "advanced-custom-fields": [
+        {"cve": "CVE-2023-30777", "componente": "ACF <=6.1.5", "cvss": 7.2,
+         "desc": "XSS reflejado vía parámetro 'post_status' accesible con rol Contributor+.",
+         "plugin": "advanced-custom-fields"},
+    ],
+    "ultimate-member": [
+        {"cve": "CVE-2023-3460", "componente": "Ultimate Member <=2.6.6", "cvss": 9.8,
+         "desc": "Escalada de privilegios sin autenticación — creación de cuenta admin mediante "
+                 "bypass de la validación de metadatos de usuario.",
+         "plugin": "ultimate-member"},
+    ],
+    "litespeed-cache": [
+        {"cve": "CVE-2024-28000", "componente": "LiteSpeed Cache <=6.3.0.1", "cvss": 9.8,
+         "desc": "Escalada de privilegios sin autenticación — hash predecible en cookie de simulación "
+                 "de rol permite crear usuario administrador.",
+         "plugin": "litespeed-cache"},
+    ],
+    "essential-addons-for-elementor": [
+        {"cve": "CVE-2023-32243", "componente": "Essential Addons <=5.7.1", "cvss": 9.8,
+         "desc": "Escalada de privilegios sin autenticación — cambio de contraseña de cualquier "
+                 "usuario incluido el admin mediante reset de contraseña sin token.",
+         "plugin": "essential-addons-for-elementor"},
+    ],
+    "wp-statistics": [
+        {"cve": "CVE-2022-25147", "componente": "WP Statistics <=13.1.5", "cvss": 8.8,
+         "desc": "SQLi sin autenticación en parámetros de estadísticas de visitas.",
+         "plugin": "wp-statistics"},
+    ],
+    "popup-builder": [
+        {"cve": "CVE-2023-6000", "componente": "Popup Builder <=4.2.3", "cvss": 8.8,
+         "desc": "XSS almacenado sin autenticación vía endpoint de suscriptores.",
+         "plugin": "popup-builder"},
+    ],
+    "timthumb": [
+        {"cve": "CVE-2011-4106", "componente": "TimThumb <=2.8.13", "cvss": 9.8,
+         "desc": "RCE clásico — permite subir y ejecutar PHP arbitrario vía parámetro src. "
+                 "Todavía activo en miles de sitios con temas viejos.",
+         "plugin": "timthumb"},
+    ],
+    "w3-total-cache": [
+        {"cve": "CVE-2023-6953", "componente": "W3 Total Cache <=2.7.2", "cvss": 8.6,
+         "desc": "SSRF sin autenticación — acceso a metadata de instancias cloud y servicios internos.",
+         "plugin": "w3-total-cache"},
+    ],
+    "gravityforms": [
+        {"cve": "CVE-2024-9130", "componente": "Gravity Forms <=2.8.9", "cvss": 8.5,
+         "desc": "SQLi con autenticación de administrador en endpoint de exportación de entradas.",
+         "plugin": "gravityforms"},
+    ],
+    "jetpack": [
+        {"cve": "CVE-2023-2996", "componente": "Jetpack <=12.1.1", "cvss": 6.4,
+         "desc": "XSS almacenado vía shortcode 'video' accessible con rol Contributor+.",
+         "plugin": "jetpack"},
+    ],
 }
 
 # Plugins a detectar: (clave_interna, ruta_en_servidor, nombre_mostrar)
 WP_PLUGINS = [
-    ("revslider",       "/wp-content/plugins/revslider/readme.txt",          "Slider Revolution"),
-    ("js_composer",     "/wp-content/plugins/js_composer/readme.txt",        "WPBakery Page Builder"),
-    ("depicter",        "/wp-content/plugins/depicter/readme.txt",           "Depicter Slider"),
-    ("sure-triggers",   "/wp-content/plugins/sure-triggers/readme.txt",      "OttoKit/SureTriggers"),
-    ("wp-file-manager", "/wp-content/plugins/wp-file-manager/readme.txt",    "File Manager"),
-    ("contact-form-7",  "/wp-content/plugins/contact-form-7/readme.txt",     "Contact Form 7"),
-    ("elementor",       "/wp-content/plugins/elementor/readme.txt",          "Elementor"),
-    ("woocommerce",     "/wp-content/plugins/woocommerce/readme.txt",        "WooCommerce"),
-    ("wpforms-lite",    "/wp-content/plugins/wpforms-lite/readme.txt",       "WPForms"),
-    ("yoast-seo",       "/wp-content/plugins/wordpress-seo/readme.txt",      "Yoast SEO"),
+    # ── Sliders / Page builders ───────────────────────────────────────────────
+    ("revslider",               "/wp-content/plugins/revslider/readme.txt",                    "Slider Revolution"),
+    ("js_composer",             "/wp-content/plugins/js_composer/readme.txt",                  "WPBakery Page Builder"),
+    ("elementor",               "/wp-content/plugins/elementor/readme.txt",                    "Elementor"),
+    ("elementor-pro",           "/wp-content/plugins/elementor-pro/readme.txt",                "Elementor Pro"),
+    ("depicter",                "/wp-content/plugins/depicter/readme.txt",                     "Depicter Slider"),
+    ("LayerSlider",             "/wp-content/plugins/LayerSlider/readme.txt",                  "LayerSlider"),
+    ("smart-slider-3",          "/wp-content/plugins/smart-slider-3/readme.txt",               "Smart Slider 3"),
+    ("divi",                    "/wp-content/themes/Divi/readme.txt",                          "Divi Theme"),
+    # ── Formularios ──────────────────────────────────────────────────────────
+    ("contact-form-7",          "/wp-content/plugins/contact-form-7/readme.txt",               "Contact Form 7"),
+    ("wpforms-lite",            "/wp-content/plugins/wpforms-lite/readme.txt",                 "WPForms Lite"),
+    ("gravityforms",            "/wp-content/plugins/gravityforms/readme.txt",                 "Gravity Forms"),
+    ("ninja-forms",             "/wp-content/plugins/ninja-forms/readme.txt",                  "Ninja Forms"),
+    ("formidable",              "/wp-content/plugins/formidable/readme.txt",                   "Formidable Forms"),
+    # ── E-commerce ───────────────────────────────────────────────────────────
+    ("woocommerce",             "/wp-content/plugins/woocommerce/readme.txt",                  "WooCommerce"),
+    ("woocommerce-payments",    "/wp-content/plugins/woocommerce-payments/readme.txt",         "WooCommerce Payments"),
+    ("easy-digital-downloads",  "/wp-content/plugins/easy-digital-downloads/readme.txt",       "Easy Digital Downloads"),
+    # ── SEO ──────────────────────────────────────────────────────────────────
+    ("yoast-seo",               "/wp-content/plugins/wordpress-seo/readme.txt",                "Yoast SEO"),
+    ("all-in-one-seo-pack",     "/wp-content/plugins/all-in-one-seo-pack/readme.txt",         "All in One SEO"),
+    ("rank-math",               "/wp-content/plugins/seo-by-rank-math/readme.txt",             "Rank Math SEO"),
+    # ── Seguridad / Login ────────────────────────────────────────────────────
+    ("wordfence",               "/wp-content/plugins/wordfence/readme.txt",                    "Wordfence Security"),
+    ("loginpress",              "/wp-content/plugins/loginpress/readme.txt",                   "LoginPress"),
+    ("wps-hide-login",          "/wp-content/plugins/wps-hide-login/readme.txt",               "WPS Hide Login"),
+    ("limit-login-attempts-reloaded", "/wp-content/plugins/limit-login-attempts-reloaded/readme.txt", "Limit Login Attempts"),
+    ("really-simple-ssl",       "/wp-content/plugins/really-simple-ssl/readme.txt",            "Really Simple SSL"),
+    # ── Gestión de archivos / Backups ────────────────────────────────────────
+    ("wp-file-manager",         "/wp-content/plugins/wp-file-manager/readme.txt",              "File Manager"),
+    ("duplicator",              "/wp-content/plugins/duplicator/readme.txt",                   "Duplicator"),
+    ("all-in-one-wp-migration", "/wp-content/plugins/all-in-one-wp-migration/readme.txt",     "All-in-One WP Migration"),
+    ("updraftplus",             "/wp-content/plugins/updraftplus/readme.txt",                  "UpdraftPlus Backup"),
+    ("backup-backup",           "/wp-content/plugins/backup-backup/readme.txt",                "BackupBliss"),
+    # ── Caché / Rendimiento ──────────────────────────────────────────────────
+    ("wp-super-cache",          "/wp-content/plugins/wp-super-cache/readme.txt",               "WP Super Cache"),
+    ("w3-total-cache",          "/wp-content/plugins/w3-total-cache/readme.txt",               "W3 Total Cache"),
+    ("litespeed-cache",         "/wp-content/plugins/litespeed-cache/readme.txt",              "LiteSpeed Cache"),
+    ("wp-fastest-cache",        "/wp-content/plugins/wp-fastest-cache/readme.txt",             "WP Fastest Cache"),
+    # ── Plugins de usuario / Membresía ───────────────────────────────────────
+    ("sure-triggers",           "/wp-content/plugins/sure-triggers/readme.txt",                "OttoKit/SureTriggers"),
+    ("ultimate-member",         "/wp-content/plugins/ultimate-member/readme.txt",              "Ultimate Member"),
+    ("memberpress",             "/wp-content/plugins/memberpress/readme.txt",                  "MemberPress"),
+    ("buddypress",              "/wp-content/plugins/buddypress/readme.txt",                   "BuddyPress"),
+    # ── Galería / Media ──────────────────────────────────────────────────────
+    ("nextgen-gallery",         "/wp-content/plugins/nextgen-gallery/readme.txt",              "NextGEN Gallery"),
+    ("envira-gallery",          "/wp-content/plugins/envira-gallery/readme.txt",               "Envira Gallery"),
+    # ── Email / Newsletter ───────────────────────────────────────────────────
+    ("mailchimp-for-wp",        "/wp-content/plugins/mailchimp-for-wp/readme.txt",             "MC4WP Mailchimp"),
+    ("wp-mail-smtp",            "/wp-content/plugins/wp-mail-smtp/readme.txt",                 "WP Mail SMTP"),
+    ("newsletter",              "/wp-content/plugins/newsletter/readme.txt",                   "Newsletter"),
+    # ── Otros comunes con CVEs ───────────────────────────────────────────────
+    ("advanced-custom-fields",  "/wp-content/plugins/advanced-custom-fields/readme.txt",       "Advanced Custom Fields"),
+    ("acf-pro",                 "/wp-content/plugins/advanced-custom-fields-pro/readme.txt",   "ACF Pro"),
+    ("jetpack",                 "/wp-content/plugins/jetpack/readme.txt",                      "Jetpack"),
+    ("wp-statistics",           "/wp-content/plugins/wp-statistics/readme.txt",                "WP Statistics"),
+    ("popup-builder",           "/wp-content/plugins/popup-builder/readme.txt",                "Popup Builder"),
+    ("cookie-notice",           "/wp-content/plugins/cookie-notice/readme.txt",                "Cookie Notice"),
+    ("gdpr-cookie-compliance",  "/wp-content/plugins/gdpr-cookie-compliance/readme.txt",       "GDPR Cookie Compliance"),
+    ("wp-migrate-db",           "/wp-content/plugins/wp-migrate-db/readme.txt",                "WP Migrate DB"),
+    ("wp-reset",                "/wp-content/plugins/wp-reset/readme.txt",                     "WP Reset"),
+    ("timthumb",                "/wp-content/plugins/timthumb/timthumb.php",                   "TimThumb"),
+    ("wp-user-avatar",          "/wp-content/plugins/wp-user-avatar/readme.txt",               "WP User Avatar"),
+    ("essential-addons-for-elementor", "/wp-content/plugins/essential-addons-for-elementor/readme.txt", "Essential Addons for Elementor"),
 ]
 
 # Versiones máximas vulnerables por plugin (para alertar si está instalado y es viejo)
 PLUGIN_VERSIONES_RIESGO = {
-    "revslider":       ("6.7.11", "6.4.11"),
-    "js_composer":     ("6.8",    "5.4.5"),
-    "contact-form-7":  ("5.3.1",  "4.9.2"),
-    "woocommerce":     ("5.5.1",  None),
-    "depicter":        ("3.8.1",  None),
-    "sure-triggers":   ("1.0.82", None),
-    "wp-file-manager": ("6.8",    None),
+    "revslider":                     ("6.7.11",  "6.4.11"),
+    "js_composer":                   ("6.8",     "5.4.5"),
+    "contact-form-7":                ("5.3.1",   "4.9.2"),
+    "woocommerce":                   ("5.5.1",   None),
+    "depicter":                      ("3.8.1",   None),
+    "sure-triggers":                 ("1.0.82",  None),
+    "wp-file-manager":               ("6.8",     None),
+    "duplicator":                    ("1.4.7.1", None),
+    "all-in-one-wp-migration":       ("7.78",    None),
+    "wp-super-cache":                ("1.7.1",   None),
+    "advanced-custom-fields":        ("6.1.5",   None),
+    "ultimate-member":               ("2.6.6",   None),
+    "litespeed-cache":               ("6.3.0.1", None),
+    "essential-addons-for-elementor":("5.7.1",   None),
+    "wp-statistics":                 ("13.1.5",  None),
+    "popup-builder":                 ("4.2.3",   None),
+    "w3-total-cache":                ("2.7.2",   None),
+    "gravityforms":                  ("2.8.9",   None),
 }
+
+# Credenciales por defecto de WordPress a probar
+WP_DEFAULT_CREDS = [
+    ("admin",     "admin"),
+    ("admin",     "password"),
+    ("admin",     "123456"),
+    ("admin",     "wordpress"),
+    ("admin",     "letmein"),
+    ("admin",     "changeme"),
+    ("admin",     ""),
+    ("wordpress", "wordpress"),
+    ("test",      "test"),
+]
 
 # Módulos PrestaShop de alto riesgo
 PS_MODULES = [
@@ -178,6 +327,12 @@ class CMSDetector:
         # 3. Exposición de WordPress
         self._check_wp_exposure(base_url)
 
+        # 4. xmlrpc.php — brute force, SSRF, enumeración
+        self._check_xmlrpc(base_url)
+
+        # 5. Credenciales por defecto
+        self._check_wp_default_creds(base_url)
+
     def _scan_wp_plugins(self, base_url: str) -> dict:
         """Devuelve dict {clave: nombre_display} de plugins confirmados instalados."""
         print("  [*] Verificando plugins instalados...")
@@ -247,6 +402,121 @@ class CMSDetector:
                     print(f"    [{sev}] {path} accesible")
             except Exception:
                 pass
+
+    def _check_xmlrpc(self, base_url: str):
+        """Comprueba si xmlrpc.php está expuesto y prueba enumeración de usuarios y multicall."""
+        url = base_url + "/xmlrpc.php"
+        try:
+            r = self.session.post(url, data="<?xml version='1.0'?><methodCall>"
+                                            "<methodName>system.listMethods</methodName>"
+                                            "<params/></methodCall>",
+                                  headers={"Content-Type": "text/xml"}, timeout=TIMEOUT)
+            if r.status_code != 200 or "faultCode" in r.text:
+                return
+
+            methods = re.findall(r'<string>([^<]+)</string>', r.text)
+            has_brute = "wp.getUsersBlogs" in methods
+            has_pingback = "pingback.ping" in methods
+
+            detail = f"Métodos activos: {', '.join(methods[:8])}{'...' if len(methods) > 8 else ''}"
+            sev = "HIGH"
+            issues = []
+
+            if has_brute:
+                issues.append("wp.getUsersBlogs permite fuerza bruta amplificada (multicall × 1000)")
+                sev = "HIGH"
+            if has_pingback:
+                issues.append("pingback.ping permite SSRF interno y escaneo de red interna")
+                sev = "HIGH"
+
+            self._add(
+                sev,
+                "WordPress — xmlrpc.php expuesto",
+                f"xmlrpc.php accesible con {len(methods)} métodos activos. " + " | ".join(issues),
+                "xmlrpc.php permite fuerza bruta de contraseñas a razón de 1000 intentos por petición "
+                "(multicall), SSRF via pingback.ping, y enumeración de usuarios. "
+                f"{detail}",
+                "Deshabilitar xmlrpc.php completamente si no se usa: añadir en .htaccess "
+                "'<Files xmlrpc.php><Order Deny,Allow><Deny from all></Files>' "
+                "o usar el plugin 'Disable XML-RPC'."
+            )
+            print(f"    [HIGH] xmlrpc.php expuesto — {len(methods)} métodos")
+
+            # Intentar enumeración de usuarios via getUsersBlogs
+            if has_brute:
+                self._xmlrpc_enum_users(url)
+
+        except Exception:
+            pass
+
+    def _xmlrpc_enum_users(self, url: str):
+        """Enumera usuarios via wp.getUsersBlogs con credenciales de prueba."""
+        for user, _ in WP_DEFAULT_CREDS[:3]:
+            payload = (f"<?xml version='1.0'?><methodCall>"
+                       f"<methodName>wp.getUsersBlogs</methodName>"
+                       f"<params><param><value><string>{user}</string></value></param>"
+                       f"<param><value><string>wrongpassword_audit</string></value></param>"
+                       f"</params></methodCall>")
+            try:
+                r = self.session.post(url, data=payload,
+                                      headers={"Content-Type": "text/xml"}, timeout=TIMEOUT)
+                # Usuario incorrecto → faultCode 403; usuario correcto pero mala pass → faultCode 403 también
+                # pero el mensaje es distinto en versiones antiguas
+                if "Incorrect username" not in r.text and "faultCode" in r.text:
+                    if re.search(r'<int>403</int>', r.text):
+                        # Podría indicar que el usuario existe (error de contraseña, no de usuario)
+                        self._add("MEDIUM", "WordPress — Enumeración de usuarios via xmlrpc",
+                                  f"Usuario '{user}' parece existir (xmlrpc devuelve error de contraseña, no de usuario)",
+                                  "La diferencia en mensajes de error permite enumerar usuarios válidos.",
+                                  "Usar mensajes de error genéricos en xmlrpc.php o deshabilitarlo.")
+                        print(f"    [MEDIUM] xmlrpc user enum — usuario '{user}' posiblemente válido")
+                        break
+            except Exception:
+                pass
+
+    def _check_wp_default_creds(self, base_url: str):
+        """Prueba credenciales por defecto contra /wp-login.php."""
+        login_url = base_url + "/wp-login.php"
+        try:
+            r = self.session.get(login_url, timeout=TIMEOUT)
+            if r.status_code != 200:
+                return
+            # Extraer nonce/campos ocultos del formulario de login
+            redirect_m = re.search(r'name="redirect_to"\s+value="([^"]*)"', r.text)
+            redirect_to = redirect_m.group(1) if redirect_m else base_url + "/wp-admin/"
+        except Exception:
+            return
+
+        print("  [*] Probando credenciales por defecto en wp-login.php...")
+        for username, password in WP_DEFAULT_CREDS:
+            try:
+                resp = self.session.post(login_url, data={
+                    "log": username, "pwd": password,
+                    "wp-submit": "Log In", "redirect_to": redirect_to,
+                    "testcookie": "1",
+                }, timeout=TIMEOUT, allow_redirects=False)
+
+                # Login exitoso → redirect a /wp-admin/
+                if resp.status_code in (301, 302):
+                    loc = resp.headers.get("Location", "")
+                    if "wp-admin" in loc or "dashboard" in loc:
+                        self._add(
+                            "CRITICAL",
+                            f"WordPress — Credenciales por defecto válidas ({username}/{password})",
+                            f"Login exitoso con {username}:{password} en {login_url}",
+                            "Acceso completo al panel de administración de WordPress. "
+                            "Un atacante puede instalar plugins maliciosos, ejecutar PHP arbitrario "
+                            "y comprometer completamente el servidor.",
+                            "Cambiar la contraseña inmediatamente. Usar contraseñas de al menos 16 "
+                            "caracteres con mayúsculas, minúsculas, números y símbolos. "
+                            "Habilitar autenticación en dos factores (2FA)."
+                        )
+                        print(f"    [CRITICAL] Credenciales válidas: {username}:{password}")
+                        return
+            except Exception:
+                pass
+
+        print("  [OK] No se encontraron credenciales por defecto en WordPress")
 
     # ── PrestaShop ────────────────────────────────────────────────────────────
 

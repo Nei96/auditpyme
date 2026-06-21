@@ -31,6 +31,7 @@ from modules.active_directory import ActiveDirectoryAuditor
 from modules.ssti import SSTIScanner
 from modules.jwt_audit import JWTAuditor
 from modules.injection import InjectionScanner
+from modules.exposed import ExposedScanner
 from modules.report import ReportGenerator
 
 BANNER = """
@@ -115,6 +116,8 @@ def parse_args():
     parser.add_argument("--skip-jwt",       action="store_true", help="Omitir auditoría JWT")
     parser.add_argument("--skip-injection", action="store_true",
                         help="Omitir inyecciones avanzadas (NoSQL, LDAP, XPath, CRLF, HPP)")
+    parser.add_argument("--skip-exposed",  action="store_true",
+                        help="Omitir búsqueda de paneles expuestos y archivos sensibles")
     parser.add_argument("--skip-cms",       action="store_true", help="Omitir fingerprinting de CMS")
     parser.add_argument("--skip-ad",        action="store_true", help="Omitir auditoría Active Directory / LDAP")
     parser.add_argument("--ad-user",   default=None, help="Usuario de dominio para auditoría AD (ej: jperez)")
@@ -243,6 +246,7 @@ def main():
         "ssti":         [],
         "jwt":          [],
         "injection":    [],
+        "exposed":      [],
     }
 
     # ── FASE 0: OSINT externo ─────────────────────────────────────────────────
@@ -301,6 +305,13 @@ def main():
             print_phase("2b", "Análisis web")
             results["web"] = WebAnalyzer(args.target, results["recon"], stealth=args.stealth).analyze()
             print(f"\n[+] Hallazgos web: {len(results['web'])}")
+
+        if not args.skip_exposed:
+            print_phase("2a2", "Paneles expuestos y archivos sensibles — phpMyAdmin · Adminer · .env · backups")
+            exp = ExposedScanner(args.target, results["recon"], stealth=args.stealth)
+            results["exposed"] = exp.scan()
+            criticos_exp = len([f for f in results["exposed"] if f.get("severidad") in ("CRITICAL", "HIGH")])
+            print(f"\n[+] Paneles/archivos sensibles críticos/altos: {criticos_exp}")
 
         if not args.skip_cms:
             print_phase("2b2", "Fingerprinting CMS — WordPress · Joomla · PrestaShop · Laravel")
@@ -451,7 +462,7 @@ def main():
                     results["cms"] + results["auth"] + results["js"] +
                     results["graphql"] + results["fileupload"] + results["bizlogic"] +
                     results["ssti"] + results["jwt"] + results["ad"] +
-                    results["injection"])
+                    results["injection"] + results["exposed"])
     criticos = sum(1 for f in all_findings if f.get("severidad") == "CRITICAL")
     altos    = sum(1 for f in all_findings if f.get("severidad") == "HIGH")
     medios   = sum(1 for f in all_findings if f.get("severidad") == "MEDIUM")
