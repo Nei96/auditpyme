@@ -28,18 +28,44 @@ class SmugglingScanner:
         print(f"\n  [*] HTTP Request Smuggling scan: {self.target}")
         for host, port, proto in self._endpoints:
             print(f"  [*] Probando {proto}://{host}:{port}")
-            self._check_cl_te(host, port, proto)
-            self._check_te_cl(host, port, proto)
-            self._check_cl_zero(host, port, proto)
+            has_proxy = self._detect_proxy_headers(host, port, proto)
+            if not has_proxy:
+                print(f"  [!] Sin proxy frontal detectado en {proto}://{host}:{port} — "
+                      f"smuggling solo aplica con proxy/CDN intermedio (omitiendo tests CL.TE/TE.CL)")
+            self._check_cl_te(host, port, proto, has_proxy)
+            self._check_te_cl(host, port, proto, has_proxy)
+            self._check_cl_zero(host, port, proto, has_proxy)
             self._check_te_obfuscation(host, port, proto)
 
         if not self.findings:
             print("  [OK] No se detectó HTTP Request Smuggling")
         return self.findings
 
+    def _detect_proxy_headers(self, host: str, port: int, proto: str) -> bool:
+        """Detecta si hay un proxy/CDN frontal mediante cabeceras de respuesta."""
+        proxy_headers = [
+            "via", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto",
+            "x-envoy-upstream-service-time", "cf-ray", "x-cache", "x-varnish",
+            "x-nginx-cache", "x-served-by", "fastly-debug-digest",
+            "x-amz-cf-id", "x-azure-ref", "server-timing",
+        ]
+        try:
+            import requests as req
+            r = req.get(f"{proto}://{host}:{port}", timeout=5, verify=False)
+            for h in proxy_headers:
+                if h in {k.lower() for k in r.headers.keys()}:
+                    return True
+            # Detectar también por cabecera Server: (si hay nginx/haproxy + otro servidor juntos)
+            server = r.headers.get("server", "").lower()
+            if any(p in server for p in ("nginx", "haproxy", "varnish", "squid", "cloudflare")):
+                return True
+        except Exception:
+            pass
+        return False
+
     # ── CL.TE — Content-Length ante el frontend, Transfer-Encoding ante el backend ──
 
-    def _check_cl_te(self, host: str, port: int, proto: str):
+    def _check_cl_te(self, host: str, port: int, proto: str, has_proxy: bool = True):
         """
         Envía una petición con ambas cabeceras CL y TE.
         Si el frontend usa CL y el backend TE, el cuerpo sobrante se
@@ -66,14 +92,14 @@ class SmugglingScanner:
         )
 
         result = self._raw_send(host, port, proto, smuggle_payload)
-        if result and self._detect_cl_te_hit(result):
+        if result and self._detect_cl_te_hit(result, has_proxy):
             self._add_smuggling("CL.TE", host, port, proto,
                 "El frontend procesa Content-Length, el backend procesa Transfer-Encoding. "
                 "Se smugglea una petición GET /admin parcial al backend.")
 
     # ── TE.CL — Transfer-Encoding ante el frontend, Content-Length ante el backend ──
 
-    def _check_te_cl(self, host: str, port: int, proto: str):
+    def _check_te_cl(self, host: str, port: int, proto: str, has_proxy: bool = True):
         """
         El frontend procesa TE chunked, el backend usa CL.
         El truco: ocultar TE para que el frontend lo ignore y use CL.
@@ -98,14 +124,14 @@ class SmugglingScanner:
         )
 
         result = self._raw_send(host, port, proto, smuggle_payload)
-        if result and self._detect_te_cl_hit(result):
+        if result and self._detect_te_cl_hit(result, has_proxy):
             self._add_smuggling("TE.CL", host, port, proto,
                 "El frontend procesa Transfer-Encoding, el backend procesa Content-Length. "
                 "Técnica con espacio en cabecera para bypassar el parser del frontend.")
 
     # ── CL.0 — Backend ignora Content-Length con cuerpo 0 ────────────────────
 
-    def _check_cl_zero(self, host: str, port: int, proto: str):
+    def _check_cl_zero(self, host: str, port: int, proto: str, has_proxy: bool = True):
         """
         Algunos backends ignoran Content-Length cuando el body parece vacío.
         Permite smuggling sin TE enviando data extra que el backend ignora pero
@@ -126,7 +152,8 @@ class SmugglingScanner:
         )
 
         result = self._raw_send(host, port, proto, smuggle_payload)
-        if result and "admin" in (result.lower()):
+        # CL.0: solo confirmar si hay proxy Y la respuesta refleja el path smuggleado explícitamente
+        if result and has_proxy and "admin?cl0=1" in result:
             self._add_smuggling("CL.0", host, port, proto,
                 "El backend puede estar ignorando Content-Length: 0. "
                 "Los bytes extra se tratan como inicio de una nueva petición (CL.0 smuggling).")
@@ -203,25 +230,31 @@ class SmugglingScanner:
 
     # ── Detección de hits ─────────────────────────────────────────────────────
 
-    def _detect_cl_te_hit(self, response: str) -> bool:
-        """CL.TE: el backend puede responder con 400/200 inesperado, o incluir headers smuggleados."""
-        indicators = [
-            "x-smuggled: 1",
-            "GET /admin",
-            "400 bad request",
-            "invalid request",
-            "malformed",
+    def _detect_cl_te_hit(self, response: str, has_proxy: bool = True) -> bool:
+        """CL.TE: indicadores inequívocos de smuggling real."""
+        # Indicadores inequívocos (no requieren proxy para ser válidos)
+        hard_indicators = [
+            "x-smuggled: 1",   # Nuestra cabecera de prueba en la respuesta
+            "GET /admin",      # El path smuggleado aparece en la respuesta
         ]
-        for ind in indicators:
+        for ind in hard_indicators:
             if ind.lower() in response.lower():
                 return True
-        # Dos respuestas HTTP en una sola conexión → pipeline smuggling
-        count_200 = len(re.findall(r"HTTP/1\.[01] [23]\d\d", response))
-        return count_200 >= 2
+        # "Doble respuesta" solo es significativa si hay proxy frontal
+        # (sin proxy, keepalive legítimo puede dar dos respuestas)
+        if has_proxy:
+            count_2xx = len(re.findall(r"HTTP/1\.[01] [23]\d\d", response))
+            if count_2xx >= 2:
+                return True
+        return False
 
-    def _detect_te_cl_hit(self, response: str) -> bool:
-        count = len(re.findall(r"HTTP/1\.[01] [23]\d\d", response))
-        return count >= 2 or "GET /admin" in response
+    def _detect_te_cl_hit(self, response: str, has_proxy: bool = True) -> bool:
+        if "GET /admin" in response:
+            return True
+        if has_proxy:
+            count = len(re.findall(r"HTTP/1\.[01] [23]\d\d", response))
+            return count >= 2
+        return False
 
     def _detect_parsing_difference(self, response: str) -> bool:
         # Diferencia de parseo: el servidor devuelve un error HTTP de parseo

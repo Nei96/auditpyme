@@ -64,9 +64,18 @@ class CloudStorageScanner:
 
     # ── Generación de candidatos ──────────────────────────────────────────────
 
+    # Hosts locales/genéricos que no deben generar candidatos cloud
+    _SKIP_BASES = {
+        "localhost", "127", "127-0-0-1", "192", "10", "172",
+        "test", "local", "example", "demo",
+    }
+
     def _generate_candidates(self) -> list:
         names = set()
         base = self._base_name
+        # No generar candidatos para IPs o hosts locales
+        if base in self._SKIP_BASES or base.replace("-", "").isdigit():
+            return []
         # Reemplazar puntos por guiones (S3 no acepta puntos en nombres con HTTPS)
         base_clean = base.replace(".", "-").replace("_", "-")
 
