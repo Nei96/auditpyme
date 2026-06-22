@@ -94,7 +94,20 @@ class ReportGenerator:
             self.r.get("graphql", []) +
             self.r.get("fileupload", []) +
             self.r.get("bizlogic", []) +
-            self.r.get("ad", [])
+            self.r.get("ad", []) +
+            self.r.get("ssti", []) +
+            self.r.get("jwt", []) +
+            self.r.get("injection", []) +
+            self.r.get("exposed", []) +
+            self.r.get("wp_exploit", []) +
+            self.r.get("api", []) +
+            self.r.get("subdomain_takeover", []) +
+            self.r.get("cloud_storage", []) +
+            self.r.get("deserialization", []) +
+            self.r.get("race_condition", []) +
+            self.r.get("smuggling", []) +
+            self.r.get("websocket", []) +
+            self.r.get("supply_chain", [])
         )
 
     def generate(self, output_path: str):
@@ -144,6 +157,13 @@ class ReportGenerator:
   {self._section_ssti()}
   {self._section_jwt()}
   {self._section_injection()}
+  {self._section_subdomain_takeover()}
+  {self._section_cloud_storage()}
+  {self._section_deserialization()}
+  {self._section_race_condition()}
+  {self._section_smuggling()}
+  {self._section_websocket()}
+  {self._section_supply_chain()}
   {self._section_webapp()}
   {self._section_recon()}
   {self._section_wifi()}
@@ -1290,6 +1310,209 @@ a.cve:hover { text-decoration: underline; }
       </tr>"""
         return self._wrap_section(
             "Inyecciones Avanzadas — NoSQL · LDAP · XPath · CRLF · HPP",
+            f"""<table><thead><tr>
+              <th>Severidad</th><th>Hallazgo</th>
+              <th>Descripción</th><th>Solución</th>
+            </tr></thead><tbody>{rows}</tbody></table>"""
+        )
+
+    def _section_subdomain_takeover(self) -> str:
+        items = sorted(self.r.get("subdomain_takeover", []),
+                       key=lambda x: SEVERITY_ORDER.get(x.get("severidad", "UNKNOWN"), 99))
+        if not items:
+            return ""
+        rows = ""
+        for f in items:
+            sev = f.get("severidad", "INFO")
+            color = SEVERITY_COLOR.get(sev, "#999")
+            impacto = f.get("impacto", "")
+            impacto_html = (
+                f'<div style="margin-top:5px;font-size:0.78rem;color:#c0392b;">'
+                f'<strong>⚠ Impacto:</strong> {impacto}</div>'
+            ) if impacto else ""
+            rows += f"""
+      <tr>
+        <td><span class="badge" style="background:{color};">{SEVERITY_ES.get(sev, sev)}</span></td>
+        <td><strong>{f.get('nombre','')}</strong>{impacto_html}</td>
+        <td style="font-size:0.82rem;">{f.get('descripcion','')}</td>
+        <td style="font-size:0.82rem;color:#555;">{f.get('recomendacion','')}</td>
+      </tr>"""
+        return self._wrap_section(
+            "Subdomain Takeover — CNAMEs huérfanos en servicios cloud",
+            f"""<table><thead><tr>
+              <th>Severidad</th><th>Hallazgo</th>
+              <th>Descripción</th><th>Solución</th>
+            </tr></thead><tbody>{rows}</tbody></table>"""
+        )
+
+    def _section_cloud_storage(self) -> str:
+        items = sorted(self.r.get("cloud_storage", []),
+                       key=lambda x: SEVERITY_ORDER.get(x.get("severidad", "UNKNOWN"), 99))
+        if not items:
+            return ""
+        rows = ""
+        for f in items:
+            sev = f.get("severidad", "INFO")
+            color = SEVERITY_COLOR.get(sev, "#999")
+            impacto = f.get("impacto", "")
+            impacto_html = (
+                f'<div style="margin-top:5px;font-size:0.78rem;color:#c0392b;">'
+                f'<strong>⚠ Impacto:</strong> {impacto}</div>'
+            ) if impacto else ""
+            rows += f"""
+      <tr>
+        <td><span class="badge" style="background:{color};">{SEVERITY_ES.get(sev, sev)}</span></td>
+        <td><strong>{f.get('nombre','')}</strong>{impacto_html}</td>
+        <td style="font-size:0.82rem;">{f.get('descripcion','')}</td>
+        <td style="font-size:0.82rem;color:#555;">{f.get('recomendacion','')}</td>
+      </tr>"""
+        return self._wrap_section(
+            "Cloud Storage — S3 · Azure Blob · GCP · DigitalOcean Spaces",
+            f"""<table><thead><tr>
+              <th>Severidad</th><th>Hallazgo</th>
+              <th>Descripción</th><th>Solución</th>
+            </tr></thead><tbody>{rows}</tbody></table>"""
+        )
+
+    def _section_deserialization(self) -> str:
+        items = sorted(self.r.get("deserialization", []),
+                       key=lambda x: SEVERITY_ORDER.get(x.get("severidad", "UNKNOWN"), 99))
+        if not items:
+            return ""
+        rows = ""
+        for f in items:
+            sev = f.get("severidad", "INFO")
+            color = SEVERITY_COLOR.get(sev, "#999")
+            impacto = f.get("impacto", "")
+            impacto_html = (
+                f'<div style="margin-top:5px;font-size:0.78rem;color:#c0392b;">'
+                f'<strong>⚠ Impacto:</strong> {impacto}</div>'
+            ) if impacto else ""
+            rows += f"""
+      <tr>
+        <td><span class="badge" style="background:{color};">{SEVERITY_ES.get(sev, sev)}</span></td>
+        <td><strong>{f.get('nombre','')}</strong>{impacto_html}</td>
+        <td style="font-size:0.82rem;">{f.get('descripcion','')}</td>
+        <td style="font-size:0.82rem;color:#555;">{f.get('recomendacion','')}</td>
+      </tr>"""
+        return self._wrap_section(
+            "Deserialización Insegura — PHP unserialize · Java · Python Pickle",
+            f"""<table><thead><tr>
+              <th>Severidad</th><th>Hallazgo</th>
+              <th>Descripción</th><th>Solución</th>
+            </tr></thead><tbody>{rows}</tbody></table>"""
+        )
+
+    def _section_race_condition(self) -> str:
+        items = sorted(self.r.get("race_condition", []),
+                       key=lambda x: SEVERITY_ORDER.get(x.get("severidad", "UNKNOWN"), 99))
+        if not items:
+            return ""
+        rows = ""
+        for f in items:
+            sev = f.get("severidad", "INFO")
+            color = SEVERITY_COLOR.get(sev, "#999")
+            impacto = f.get("impacto", "")
+            impacto_html = (
+                f'<div style="margin-top:5px;font-size:0.78rem;color:#c0392b;">'
+                f'<strong>⚠ Impacto:</strong> {impacto}</div>'
+            ) if impacto else ""
+            rows += f"""
+      <tr>
+        <td><span class="badge" style="background:{color};">{SEVERITY_ES.get(sev, sev)}</span></td>
+        <td><strong>{f.get('nombre','')}</strong>{impacto_html}</td>
+        <td style="font-size:0.82rem;">{f.get('descripcion','')}</td>
+        <td style="font-size:0.82rem;color:#555;">{f.get('recomendacion','')}</td>
+      </tr>"""
+        return self._wrap_section(
+            "Race Conditions — TOCTOU · Double-Spend · Cupones · Pagos",
+            f"""<table><thead><tr>
+              <th>Severidad</th><th>Hallazgo</th>
+              <th>Descripción</th><th>Solución</th>
+            </tr></thead><tbody>{rows}</tbody></table>"""
+        )
+
+    def _section_smuggling(self) -> str:
+        items = sorted(self.r.get("smuggling", []),
+                       key=lambda x: SEVERITY_ORDER.get(x.get("severidad", "UNKNOWN"), 99))
+        if not items:
+            return ""
+        rows = ""
+        for f in items:
+            sev = f.get("severidad", "INFO")
+            color = SEVERITY_COLOR.get(sev, "#999")
+            impacto = f.get("impacto", "")
+            impacto_html = (
+                f'<div style="margin-top:5px;font-size:0.78rem;color:#c0392b;">'
+                f'<strong>⚠ Impacto:</strong> {impacto}</div>'
+            ) if impacto else ""
+            rows += f"""
+      <tr>
+        <td><span class="badge" style="background:{color};">{SEVERITY_ES.get(sev, sev)}</span></td>
+        <td><strong>{f.get('nombre','')}</strong>{impacto_html}</td>
+        <td style="font-size:0.82rem;">{f.get('descripcion','')}</td>
+        <td style="font-size:0.82rem;color:#555;">{f.get('recomendacion','')}</td>
+      </tr>"""
+        return self._wrap_section(
+            "HTTP Request Smuggling — CL.TE · TE.CL · CL.0 · Ofuscación TE",
+            f"""<table><thead><tr>
+              <th>Severidad</th><th>Hallazgo</th>
+              <th>Descripción</th><th>Solución</th>
+            </tr></thead><tbody>{rows}</tbody></table>"""
+        )
+
+    def _section_websocket(self) -> str:
+        items = sorted(self.r.get("websocket", []),
+                       key=lambda x: SEVERITY_ORDER.get(x.get("severidad", "UNKNOWN"), 99))
+        if not items:
+            return ""
+        rows = ""
+        for f in items:
+            sev = f.get("severidad", "INFO")
+            color = SEVERITY_COLOR.get(sev, "#999")
+            impacto = f.get("impacto", "")
+            impacto_html = (
+                f'<div style="margin-top:5px;font-size:0.78rem;color:#c0392b;">'
+                f'<strong>⚠ Impacto:</strong> {impacto}</div>'
+            ) if impacto else ""
+            rows += f"""
+      <tr>
+        <td><span class="badge" style="background:{color};">{SEVERITY_ES.get(sev, sev)}</span></td>
+        <td><strong>{f.get('nombre','')}</strong>{impacto_html}</td>
+        <td style="font-size:0.82rem;">{f.get('descripcion','')}</td>
+        <td style="font-size:0.82rem;color:#555;">{f.get('recomendacion','')}</td>
+      </tr>"""
+        return self._wrap_section(
+            "WebSocket Security — Origin · Autenticación · Inyección",
+            f"""<table><thead><tr>
+              <th>Severidad</th><th>Hallazgo</th>
+              <th>Descripción</th><th>Solución</th>
+            </tr></thead><tbody>{rows}</tbody></table>"""
+        )
+
+    def _section_supply_chain(self) -> str:
+        items = sorted(self.r.get("supply_chain", []),
+                       key=lambda x: SEVERITY_ORDER.get(x.get("severidad", "UNKNOWN"), 99))
+        if not items:
+            return ""
+        rows = ""
+        for f in items:
+            sev = f.get("severidad", "INFO")
+            color = SEVERITY_COLOR.get(sev, "#999")
+            impacto = f.get("impacto", "")
+            impacto_html = (
+                f'<div style="margin-top:5px;font-size:0.78rem;color:#c0392b;">'
+                f'<strong>⚠ Impacto:</strong> {impacto}</div>'
+            ) if impacto else ""
+            rows += f"""
+      <tr>
+        <td><span class="badge" style="background:{color};">{SEVERITY_ES.get(sev, sev)}</span></td>
+        <td><strong>{f.get('nombre','')}</strong>{impacto_html}</td>
+        <td style="font-size:0.82rem;">{f.get('descripcion','')}</td>
+        <td style="font-size:0.82rem;color:#555;">{f.get('recomendacion','')}</td>
+      </tr>"""
+        return self._wrap_section(
+            "Supply Chain — Dependency Confusion · npm · pip · Composer · CI/CD",
             f"""<table><thead><tr>
               <th>Severidad</th><th>Hallazgo</th>
               <th>Descripción</th><th>Solución</th>

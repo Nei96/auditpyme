@@ -34,6 +34,13 @@ from modules.injection import InjectionScanner
 from modules.exposed import ExposedScanner
 from modules.wp_exploit import WordPressExploiter
 from modules.api import APIScanner
+from modules.subdomain_takeover import SubdomainTakeoverScanner
+from modules.cloud_storage import CloudStorageScanner
+from modules.deserialization import DeserializationScanner
+from modules.race_condition import RaceConditionScanner
+from modules.smuggling import SmugglingScanner
+from modules.websocket import WebSocketScanner
+from modules.supply_chain import SupplyChainScanner
 from modules.report import ReportGenerator
 
 BANNER = """
@@ -124,6 +131,20 @@ def parse_args():
                         help="Omitir explotación profunda WordPress (git dump, multicall brute, brute force)")
     parser.add_argument("--skip-api",     action="store_true",
                         help="Omitir auditoría profunda de API REST (BOLA, mass assignment, BFLA)")
+    parser.add_argument("--skip-subdomain-takeover", action="store_true",
+                        help="Omitir detección de subdomain takeover")
+    parser.add_argument("--skip-cloud",     action="store_true",
+                        help="Omitir búsqueda de buckets cloud mal configurados (S3, Azure, GCP)")
+    parser.add_argument("--skip-deserialization", action="store_true",
+                        help="Omitir detección de deserialización insegura (PHP, Java, Pickle)")
+    parser.add_argument("--skip-race",      action="store_true",
+                        help="Omitir detección de race conditions (TOCTOU, double-spend)")
+    parser.add_argument("--skip-smuggling", action="store_true",
+                        help="Omitir detección de HTTP Request Smuggling (CL.TE, TE.CL)")
+    parser.add_argument("--skip-websocket", action="store_true",
+                        help="Omitir auditoría de WebSockets (Origin, auth, inyección)")
+    parser.add_argument("--skip-supply-chain", action="store_true",
+                        help="Omitir detección de dependency confusion y supply chain")
     parser.add_argument("--skip-cms",       action="store_true", help="Omitir fingerprinting de CMS")
     parser.add_argument("--skip-ad",        action="store_true", help="Omitir auditoría Active Directory / LDAP")
     parser.add_argument("--ad-user",   default=None, help="Usuario de dominio para auditoría AD (ej: jperez)")
@@ -251,10 +272,17 @@ def main():
         "bizlogic":     [],
         "ssti":         [],
         "jwt":          [],
-        "injection":    [],
-        "exposed":      [],
-        "wp_exploit":   [],
-        "api":          [],
+        "injection":             [],
+        "exposed":               [],
+        "wp_exploit":            [],
+        "api":                   [],
+        "subdomain_takeover":    [],
+        "cloud_storage":         [],
+        "deserialization":       [],
+        "race_condition":        [],
+        "smuggling":             [],
+        "websocket":             [],
+        "supply_chain":          [],
     }
 
     # ── FASE 0: OSINT externo ─────────────────────────────────────────────────
@@ -455,6 +483,63 @@ def main():
             criticos_ad = len([f for f in results["ad"] if f.get("severidad") in ("CRITICAL", "HIGH")])
             print(f"\n[+] Hallazgos AD críticos/altos: {criticos_ad}")
 
+        if not args.skip_subdomain_takeover:
+            print_phase("2c1", "Subdomain Takeover — CNAMEs huérfanos en S3, GitHub Pages, Heroku, Azure...")
+            st = SubdomainTakeoverScanner(args.target, results["recon"],
+                                         dns_findings=results["dns"])
+            results["subdomain_takeover"] = st.scan()
+            criticos_st = len([f for f in results["subdomain_takeover"]
+                                if f.get("severidad") in ("CRITICAL", "HIGH")])
+            print(f"\n[+] Subdomain takeover hallazgos: {criticos_st}")
+
+        if not args.skip_cloud:
+            print_phase("2c2", "Cloud Storage — S3, Azure Blob, GCP, DigitalOcean Spaces")
+            cs = CloudStorageScanner(args.target, results["recon"])
+            results["cloud_storage"] = cs.scan()
+            criticos_cs = len([f for f in results["cloud_storage"]
+                                if f.get("severidad") in ("CRITICAL", "HIGH")])
+            print(f"\n[+] Cloud storage hallazgos: {criticos_cs}")
+
+        if not args.skip_deserialization:
+            print_phase("2c3", "Deserialización insegura — PHP unserialize · Java · Python pickle")
+            deser = DeserializationScanner(args.target, results["recon"], stealth=args.stealth)
+            results["deserialization"] = deser.scan()
+            criticos_de = len([f for f in results["deserialization"]
+                                if f.get("severidad") in ("CRITICAL", "HIGH")])
+            print(f"\n[+] Deserialización hallazgos: {criticos_de}")
+
+        if not args.skip_race:
+            print_phase("2c4", "Race Conditions — TOCTOU · double-spend · cupones · pagos")
+            race = RaceConditionScanner(args.target, results["recon"], stealth=args.stealth)
+            results["race_condition"] = race.scan()
+            criticos_rc = len([f for f in results["race_condition"]
+                                if f.get("severidad") in ("CRITICAL", "HIGH")])
+            print(f"\n[+] Race condition hallazgos: {criticos_rc}")
+
+        if not args.skip_smuggling:
+            print_phase("2c5", "HTTP Request Smuggling — CL.TE · TE.CL · CL.0 · TE obfuscation")
+            smug = SmugglingScanner(args.target, results["recon"], stealth=args.stealth)
+            results["smuggling"] = smug.scan()
+            criticos_sm = len([f for f in results["smuggling"]
+                                if f.get("severidad") in ("CRITICAL", "HIGH")])
+            print(f"\n[+] HTTP Smuggling hallazgos: {criticos_sm}")
+
+        if not args.skip_websocket:
+            print_phase("2c6", "WebSocket Security — Origin · autenticación · inyección")
+            ws = WebSocketScanner(args.target, results["recon"], stealth=args.stealth)
+            results["websocket"] = ws.scan()
+            criticos_ws = len([f for f in results["websocket"]
+                                if f.get("severidad") in ("CRITICAL", "HIGH")])
+            print(f"\n[+] WebSocket hallazgos: {criticos_ws}")
+
+        if not args.skip_supply_chain:
+            print_phase("2c7", "Supply Chain — Dependency Confusion · npm · pip · Composer")
+            sc = SupplyChainScanner(args.target, results["recon"], stealth=args.stealth)
+            results["supply_chain"] = sc.scan()
+            criticos_sc = len([f for f in results["supply_chain"]
+                                if f.get("severidad") in ("CRITICAL", "HIGH")])
+            print(f"\n[+] Supply chain hallazgos: {criticos_sc}")
+
     # ── FASE 4: Informe ───────────────────────────────────────────────────────
     print_phase(4, "Generando informe")
     results["fecha_fin"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
@@ -485,7 +570,11 @@ def main():
                     results["graphql"] + results["fileupload"] + results["bizlogic"] +
                     results["ssti"] + results["jwt"] + results["ad"] +
                     results["injection"] + results["exposed"] +
-                    results["wp_exploit"] + results["api"])
+                    results["wp_exploit"] + results["api"] +
+                    results["subdomain_takeover"] + results["cloud_storage"] +
+                    results["deserialization"] + results["race_condition"] +
+                    results["smuggling"] + results["websocket"] +
+                    results["supply_chain"])
     criticos = sum(1 for f in all_findings if f.get("severidad") == "CRITICAL")
     altos    = sum(1 for f in all_findings if f.get("severidad") == "HIGH")
     medios   = sum(1 for f in all_findings if f.get("severidad") == "MEDIUM")
