@@ -496,10 +496,30 @@ class CMSDetector:
                     "testcookie": "1",
                 }, timeout=TIMEOUT, allow_redirects=False)
 
-                # Login exitoso → redirect a /wp-admin/
+                # Login exitoso → redirect a /wp-admin/ + confirmar acceso real
                 if resp.status_code in (301, 302):
                     loc = resp.headers.get("Location", "")
                     if "wp-admin" in loc or "dashboard" in loc:
+                        # Verificar que el destino es el dashboard real,
+                        # no otro redirect (ej: Really Simple SSL fuerza HTTPS
+                        # y redirige /wp-admin/ aunque el login haya fallado)
+                        try:
+                            check = self.session.get(
+                                loc if loc.startswith("http") else base_url + loc,
+                                timeout=TIMEOUT, allow_redirects=True
+                            )
+                            # Login real: la página contiene elementos del dashboard
+                            # Login fallido: acaba en wp-login.php o contiene "loggedout"
+                            final_url = check.url.lower()
+                            if "wp-login" in final_url or "loggedout" in final_url:
+                                continue  # Falso positivo — redirigió de vuelta al login
+                            if not any(marker in check.text for marker in [
+                                "wp-admin", "dashboard", "adminmenu",
+                                "wpadminbar", "logout"
+                            ]):
+                                continue  # No es el dashboard real
+                        except Exception:
+                            continue
                         self._add(
                             "CRITICAL",
                             f"WordPress — Credenciales por defecto válidas ({username}/{password})",
